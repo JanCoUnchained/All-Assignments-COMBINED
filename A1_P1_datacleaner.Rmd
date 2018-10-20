@@ -73,6 +73,12 @@ Tip: Or look through the chapter on data transformation in R for data science (h
 
 
 ```{r}
+#checking variable names 
+ls(demo_raw) 
+ls(lu_raw)
+ls(token_raw)
+
+#making demo_raw compatible with the others 
 demo <- demo_raw %>%
   rename(SUBJ = Child.ID, VISIT = Visit) #last argument renamed to first argument. 
 ```
@@ -81,11 +87,15 @@ demo <- demo_raw %>%
 Tip: There is a package called stringr, which will be very handy for manipulating (text) strings also in furture assignments. We will return to this package later, but for now use the str_extract () to extract only the number from the variable Visit in each data set.
 
 ```{r}
+#checking for types of data 
+str(demo_raw)
+str(lu_raw)
+str(token_raw)
+
+#subtracting the characters from visit & transforming it into integer. 
 lu <- lu_raw %>%
   mutate(VISIT = str_extract(VISIT, "[0-9]"), #regex indicating that we only want digits. 
          VISIT = as.integer(VISIT)) #as integer, as there is now only digits. 
-
-#[0-9] or [:digit:] - square brackets = chose one. 
 
 token <- token_raw %>%
   mutate(VISIT = as.character(VISIT), #same as above. 
