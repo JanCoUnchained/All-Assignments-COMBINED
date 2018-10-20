@@ -220,7 +220,7 @@ data_3$Diagnosis <- if_else(data$Diagnosis == "A", "ASD", "TD") #changes diagnos
 Write the data set into a csv file. 
 
 ```{r}
-write.csv(data_3, "language_dev_asd_clean.csv", row.names = F)
+#write.csv(data_3, "language_dev_asd_clean.csv", row.names = F)
 ```
 
 
@@ -293,18 +293,11 @@ USING SELECT
 2. What happens if you include the name of a variable multiple times in a select() call?
 
 ```{r}
-
-#making subset with kids w. ASD, mlu & word tokens 
-subset <- data_3 %>% 
+mess <- data_3 %>%
   filter(Diagnosis == "ASD") %>%
-  filter(!is.na(CHI_MLU)) %>%
-  filter(!is.na(tokens_CHI)) #impossibly many here, subset = 0 - smarter way w. select?
+  select(SUBJ, SUBJ, Diagnosis, CHI_MLU, CHI_MLU)
 
-#what happens if name of variable multiple times in select call
-subset2 <- data_3 %>% 
-  select()
-
-
+# including a variable twice in the function call does not duplicate the variable in the resulting df
 ```
 
 
@@ -314,14 +307,12 @@ USING MUTATE, SUMMARISE and PIPES
 3. The solution to task above enables us to assess the average amount of words produced by each child. Why don't we just use these average values to describe the language production of the children? What is the advantage of keeping all the data?
 
 ```{r}
-
-#1 but it is not very clear, what is meant. 
-data_4 <- data_3 %>%
-  mutate(mean())
-
-#2 once again, I do not understand the task. 
-data_5 <- data_4 %>% 
+pip1 <- data_3 %>%
   group_by(SUBJ) %>%
-  mutate(summarise()
+  mutate(m_CHI_MLU = mean(CHI_MLU))
+
+pip2 <- data_3 %>%
+  group_by(SUBJ) %>%
+  summarise(m_CHI_MLU = mean(CHI_MLU))
 
 ```
