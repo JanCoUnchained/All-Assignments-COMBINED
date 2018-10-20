@@ -51,9 +51,9 @@ Load the three data sets, after downloading them from dropbox and saving them in
 * Word data: https://www.dropbox.com/s/8ng1civpl2aux58/token_train.csv?dl=0
 
 ```{r}
-demo_raw <- read.csv("demo_train.csv")
-lu_raw <- read.csv("LU_train.csv")
-token_raw <- read.csv("token_train.csv")
+demo_raw <- read.csv("A1_P1/demo_train.csv")
+lu_raw <- read.csv("A1_P1/LU_train.csv")
+token_raw <- read.csv("A1_P1/token_train.csv")
 #Here we read all the data into R
 ```
 
