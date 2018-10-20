@@ -1,0 +1,363 @@
+---
+title: "Assignment 1 - Language Development in ASD - part 2"
+author: "Carl, Anders, Magnus, Jan, Victor"
+date: \today{}
+output: pdf_document
+---
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# you could optionally set include = TRUE globally while working on the exercise and then just change it to include = FALSE before you hand in
+# knitr::opts_chunk$set(include = FALSE)
+```
+
+# Template for the hand-in
+### Structure of the code chunks
+
+Basic stuff:
+- Loading the libraries
+- Setting the directory and loading the data
+- Look at the data (which variables are there? Are they in the right format?) and describe the participants (by diagnosis)
+
+We will try to answer three questions:
+    
+- Do children with ASD develop language differently from non-ASD children?
+- Do parents speak differently to children with ASD than to non-ASD ones?
+- Which variables should we use to best explain the child linguistic performance?
+
+### Loading the relevant libraries
+
+Load necessary libraries : what will you need?
+
+- e.g. something to plot with
+- e.g. mixed effects models
+
+```{r Load Libraries, include = FALSE}
+
+library(pacman)
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest) 
+
+```
+
+### Define your working directory and load the data
+If you created a project for this class and opened this Rmd file from within that project, your working directory is your project directory.
+
+If you opened this Rmd file outside of a project, you will need some code to find the data:
+- Create a new variable called locpath (localpath)
+- Set it to be equal to your working directory
+- Move to that directory (setwd(locpath))
+- Load the data you saved last time (use read_csv(fileName))
+
+If your're in a project, just put the data in the project folder and you're good to go! (Or make a data subfolder to keep it tidy around here)
+
+```{r Load Data, include = FALSE}
+#working directory.
+getwd()
+
+#loading data
+data <- read.csv("language_dev_asd_clean_2.csv") #data from assignment 1 
+
+```
+
+### Characterize the participants (Exercise 1)
+
+Identify relevant variables: participants demographic characteristics, diagnosis, ADOS, Verbal IQ, Non Verbal IQ, Visit, Number of words used, Number of unique words used, length of utterance in both child and parents.
+
+Make sure the variables are in the right format.
+
+Describe the characteristics of the two groups of participants and whether the two groups are well matched.
+
+```{r descriptive stats, include = FALSE}
+#right format 
+str(data) 
+
+#conversion
+data$SUBJ <- as.factor(data$SUBJ) 
+data$VISIT <- as.factor(data$VISIT)
+
+#well matched? 
+participants <- data %>%
+  filter(VISIT == 6)
+
+summary(participants$Diagnosis) #29 ASD & 32 TD 
+
+#creating subsets for age 
+data_ASD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "ASD") 
+
+data_TD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "TD") 
+
+#z-score for ASD
+data_ASD <- data_ASD %>% 
+  mutate(ageZ = scale(Age))
+
+data_TD <- data_TD %>%
+  mutate(ageZ = scale(Age))
+
+#summary ASD
+summary(data_ASD$ageZ) #bigger z-scores, some very old and young 
+which(data_ASD$ageZ > 2) # 
+which(data_ASD$ageZ < -2) #8
+
+#summary TD
+summary(data_TD$ageZ) #somewhat smaller z-scores 
+which(data_TD$ageZ > 2) #2, 29 
+which(data_TD$ageZ < -2) #none
+
+#comparing means 
+difference <- mean(data_TD$Age) - mean(data_ASD$Age)
+difference #huge difference of 12.6 (months older in general)
+
+#comparing means with Z
+z_diff <- mean(data_TD$ageZ) - mean(data_ASD$ageZ)
+z_diff #very very small. 
+
+#histograms
+hist(data_ASD$ageZ) #we have one huge outlier (younger)
+hist(data_TD$ageZ) #A couple of outliers (older)
+
+hist(data_ASD$Age) 
+hist(data_TD$Age) #don't get quite as old - matching production. 
+summary(data_ASD$Age) #18.77 - 42
+
+#Gender
+summary(data_ASD$Gender) #Female = 146, Male = 26
+summary(data_TD$Gender) #Female = 155, Male = 35
+
+#Ethnicity
+summary(data_ASD$Ethnicity) #ASD mainly white & some scattered. 
+summary(data_TD$Ethnicity) #TD only white & asian 
+
+#random intercepts
+data$Kid = factor(data$SUBJ) #from lecture 
+
+```
+
+[REPORT THE RESULTS]
+
+## Let's test hypothesis 1: Children with ASD display a language impairment  (Exercise 2)
+
+### Hypothesis: The child's MLU changes: i) over time, ii) according to diagnosis
+
+Let's start with a simple mixed effects linear model
+
+Remember to plot the data first and then to run a statistical test.
+- Which variable(s) should be included as fixed factors?
+- Which variable(s) should be included as random factors?
+
+```{r ex2, include = FALSE}
+
+#plotting w. colors
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+#boxplot 
+ggplot(data, aes(Diagnosis, CHI_MLU))+
+  geom_boxplot() #outliers in ASD. 
+
+#beeswarm plot
+p_load(beeswarm)
+
+boxplot(CHI_MLU ~ Diagnosis, data = data, 
+  outline = FALSE,    
+  main = 'boxplot + beeswarm')
+beeswarm(CHI_MLU ~ Diagnosis, data = data, 
+  col = 4, pch = 16, add = TRUE)
+
+#violin plot 
+ggplot(data, aes(Diagnosis, CHI_MLU)) +
+  geom_violin(aes(fill = CHI_MLU)) +
+  geom_boxplot(width = 0.2)
+
+#linear mixed effects model 
+data$VISIT <- as.integer(data$VISIT) #crucial to run the model 
+
+model_data <- data %>%
+  filter(!is.na(CHI_MLU) & !is.na(VISIT) & !is.na(Diagnosis))
+
+#different potential models 
+library(MuMIn)
+
+mixed_model <- lmer(CHI_MLU ~ VISIT * Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+summary(mixed_model) #VISIT very significant, DiagnosisTD not significant. 
+r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
+
+```
+
+How would you evaluate whether the model is a good model?
+
+```{r ex2 evaluate, include = FALSE}
+
+#Other models 
+model_simple <- lmer(CHI_MLU ~ VISIT + (1+VISIT|SUBJ), model_data, REML=FALSE)
+model_diagnosis <- lmer(CHI_MLU ~ Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+model_noint <- lmer(CHI_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+#pairwise anova tests 
+anova(model_simple, mixed_model) #mixed model not sign. better
+anova(model_diagnosis, mixed_model) #mixed model sign. better
+anova(model_noint, mixed_model) #model_simple sign. better
+
+#r-squared for the two best models (model_simple, mixed_model)
+r.squaredGLMM(mixed_model) #mixed model has highest marginal r-squared. 
+r.squaredGLMM(model_noint) 
+
+```
+
+Not too good, right? Let's check whether a growth curve model is better.
+Remember: a growth curve model assesses whether changes in time can be described by linear, or quadratic, or cubic (or... etc.) components.
+First build the different models, then compare them to see which one is better.
+
+```{r ex2 growth curve, include = FALSE}
+
+#visualizing quadratic 
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "child mean length of utterance (MLU)")
+
+#visualizing Cubic
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3))
+
+#spaghetti plot
+ggplot(data, aes(VISIT, CHI_MLU, slope = SUBJ, color = Diagnosis)) +
+  geom_smooth() #disgusting. 
+
+#different models 
+m_linear <- lmer(CHI_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+m_quadratic <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+m_cubic <- lmer(CHI_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#evaluating them 
+library(lmerTest)
+summary(m_cubic) #cubic seems to perform poorly (i.e., have non-significant effects)
+summary(m_quadratic) #quadratic seems to perform well (i.e., have significant effects)
+summary(m_linear)
+
+#comparing them 
+anova(m_linear, m_quadratic) #quadratic best
+anova(m_quadratic, m_cubic) #qubic best
+anova(m_linear, m_cubic) #qubic best 
+
+#comparison of r-squared 
+r.squaredGLMM(m_quadratic) # R2m = .23
+r.squaredGLMM(m_cubic) # R2m = .22
+r.squaredGLMM(m_linear) # R2m = .22
+
+#effects package plotting (quadratic)
+library(effects)
+ef <- effect("VISIT:Diagnosis", m_quadratic, xlevels = 6)
+summary(ef) #visit 3 
+
+eff_plot <- as.data.frame(ef)
+eff_plot
+
+ggplot(eff_plot, aes(VISIT, fit, color=Diagnosis)) + geom_point() + geom_errorbar(aes(ymin=fit-se, ymax=fit+se), width=0.4) + theme_bw(base_size=12)  
+
+#this only gives us 5 levels
+plot(predictorEffects(m_quadratic))
+
+```
+
+Exciting right?
+Now it's time to report our results.
+Remember to report:
+- the estimates for each predictor (beta estimate, standard error, p-value)
+- A plain word description of the results
+- A plot of your best model's predictions
+
+[REPORT THE RESULTS]
+Linguistic development of children MLU is affected by ... 
+
+## Let's test hypothesis 2: Parents speak equally to children with ASD and TD  (Exercise 3)
+
+### Hypothesis: Parental MLU changes: i) over time, ii) according to diagnosis
+
+```{r ex3, include = FALSE}
+
+#visualizing lineaer
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm") +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing quadratic 
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing Cubic
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3))
+
+#different models 
+m_linear <- lmer(MOT_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+m_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+m_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#summaries
+summary(mot_cubic) #needs interpretation
+summary(mot_quadratic) #needs interpretation 
+summary(mot_linear)
+
+#comparison
+anova(mot_linear, mot_quadratic, mot_cubic)
+
+#comparison pairwie 
+anova(mot_quadratic, mot_cubic) #cubic not significantly better
+anova(mot_linear, mot_quadratic) #quadratic significantly better 
+
+#r-squared
+r.squaredGLMM(mot_quadratic) # R2m = .24
+r.squaredGLMM(mot_cubic) # R2m = .23
+r.squaredGLMM(mot_linear) # R2m = .23 
+
+```
+
+[REPORT THE RESULTS]
+
+### Adding new variables (Exercise 4)
+
+Your task now is to figure out how to best describe the children linguistic trajectory. The dataset contains a bunch of additional demographic, cognitive and clinical variables (e.g.verbal and non-verbal IQ). Try them out and identify the statistical models that best describes your data (that is, the children's MLU). Describe how you selected the best model and send the code to run the model to Malte (au540041@post.au.dk).
+
+
+```{r ex4, include = FALSE}
+
+#initial correlation
+cor_data = select(model_data, VISIT, Age, ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU, types_MOT, tokens_MOT, types_CHI, tokens_CHI, CHI_MLU) %>%
+  filter(!is.na(Age))
+
+corr = round(cor(cor_data,method = "spearman"),2)
+
+#stepwise w. lmer for quadratic  
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1, data = model_data, REML=FALSE)
+summary(big_model)
+
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + verbalIQ_1, data = model_data, REML=FALSE)
+
+(step_res <- step(big_model))
+final <- get_model(step_res)
+anova(final) 
+summary(final) #works, good t-values 
+
+#compared to the quadratic model earlier 
+anova(m_quadratic, big_model) 
+anova(big_model) 
+
+#r-squared
+r.squaredGLMM(big_model) #R2m .6
+
+```
+
+[REPORT THE RESULTS]
+
