@@ -1,5 +1,5 @@
-library(tidyverse)
-library(ggthemes)
+library(pacman)
+p_load(tidyverse, ggthemes, cowplot, magick)
 
 data <- read.csv("language_dev_asd_clean_2.csv")
 
@@ -38,7 +38,7 @@ geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", po
 
 
 ## THE PLOT
-ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
+good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
   geom_split_violin(alpha = 0.6, 
                     bw = "nrd0",
                     width = 1.2,
@@ -55,9 +55,12 @@ ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
   theme_bw() +
   scale_fill_tableau() +
   scale_color_tableau() +
-  labs(title = "fuck this was hard",
-       subtitle = "Riccardo probably cheated using python", 
+  scale_x_continuous(breaks=seq(1,6,1)) +
+  labs(title = "Development of Child's MLU",
+       #subtitle = "", 
        x = "Visit number", 
        y = "Child's MLU")
 
-
+#ggdraw() +
+#  draw_image("http://digitalsociety.dk/wp-content/uploads/2017/09/Riccardo-Fusaroli-.jpg") +
+#  draw_plot(good)
