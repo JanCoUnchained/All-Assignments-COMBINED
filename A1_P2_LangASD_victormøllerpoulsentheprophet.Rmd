@@ -351,7 +351,7 @@ ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
   geom_point() + 
   stat_smooth(method = "lm", formula = y ~ poly(x, 3))
 
-#different models 
+#models for mother with interaction
 mot_linear <- lmer(MOT_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
 
 mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
@@ -359,8 +359,20 @@ mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VI
 mot_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
 
 #summaries
-summary(mot_cubic) #needs interpretation
-summary(mot_quadratic) #needs interpretation 
+summary(mot_cubic) 
+summary(mot_quadratic) 
+summary(mot_linear)
+
+#models for mother without interaction
+mot_linear <- lmer(MOT_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2)) + Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+mot_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3)) + Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#summaries
+summary(mot_cubic) 
+summary(mot_quadratic) 
 summary(mot_linear)
 
 #comparison
