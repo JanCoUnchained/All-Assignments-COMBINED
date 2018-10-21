@@ -1,7 +1,8 @@
 ---
-title: "markdown_onetwo"
-author: "Victor Møller"
-date: "20 okt 2018"
+title: "Assignment 1 & 2"
+subtitle: "Data cleaning & Model Building"
+author: "Magnus BK, Carl-Magnus, Jan Kostkan, Anders Weile, Victor Møller"
+date: "\today{}"
 output: pdf_document
 ---
 
@@ -10,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #libraries
 library(pacman)
-p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, effects, MuMIn, cowplot) 
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, effects, MuMIn, cowplot,ggthemes,magick) 
 
 #loading data
 data <- read.csv("language_dev_asd_clean_2.csv") #data from assignment 1 
@@ -253,20 +254,97 @@ anova(big_model)
 r.squaredGLMM(big_model) #R2m .6
 ```
 
-Hypothesis 1 
+\tableofcontents
 
-Plotting 
+# Exercise 1) Characterizing the participants:
 
+## Evaluating how the groups match:
+
+* Number of participants: The two groups are relatively well matched. At the beginning of the experiment the group containing the typically-developing children is slightly larger: (ASD: 29, TD: 32). However, the group sizes equal out by visit 6 (28 participants in both groups).
+
+* Mean MLU at first visit: The groups are well matched in MLU at the first visit.
+
+* Age: The mean age of the two groups are not well matched. The participants in the ASD group are on average 12.63 months older than those in the TD group. Additionally, the age distribution of the ASD contains more variance than the TD group, perhaps because of more within-group variability in language development. This could be a confounding factor, since the older children in the ASD group might have a slower growth curve than the younger ones. However, the main aim has been to match the children by their mean MLU, which is what has been primarily controlled for by the experimenters.
+
+* Ethnicity: Pretty well-matched between ASD and TD. However, both samples consist mainly of white people. Number of participants of other ethnic groups did not exceed 2 in either group. Thus, the variable does not seem to be of much value.
+
+* Gender: The groups are well matched (ASD: M: 25 & F: 4) (TD: M: 26 & F: 6) → Males are prevalent in both groups, so one should be careful with extrapolation from findings to the wider population (especially women).
+
+
+## Hypothesis 1: 
+Children with ASD display a language impairment
+
+Before creating our statistical model, we plot the data. 
+We used a combined **svliocatooth** plot to highlight the development between the groups as well as the variability for both groups. 
 ```{r cars, echo = FALSE, messages = FALSE}
 #plotting w. colors
-ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
-  geom_point() + 
-  geom_smooth()
+# SPLIT VIIOLIN FUNCITON
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, 
+                           draw_group = function(self, data, ..., draw_quantiles = NULL) {
+                             data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+                             grp <- data[1, "group"]
+                             newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
+                             newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+                             newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
+                             
+                             if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+                               stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <=
+                                                                         1))
+                               quantiles <- ggplot2:::create_quantile_segment_frame(data, draw_quantiles)
+                               aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+                               aesthetics$alpha <- rep(1, nrow(quantiles))
+                               both <- cbind(quantiles, aesthetics)
+                               quantile_grob <- GeomPath$draw_panel(both, ...)
+                               ggplot2:::ggname("geom_split_violin", grid::grobTree(GeomPolygon$draw_panel(newdata, ...), quantile_grob))
+                             }
+                             else {
+                               ggplot2:::ggname("geom_split_violin", GeomPolygon$draw_panel(newdata, ...))
+                             }
+                           })
+
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
+                              draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, 
+                              show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, 
+        position = position, show.legend = show.legend, inherit.aes = inherit.aes, 
+        params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
+
+
+## THE PLOT
+good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
+  geom_split_violin(alpha = 0.6, 
+                    bw = "nrd0",
+                    width = 1.2,
+                    scale = "count",
+                    aes(fill = Diagnosis, 
+                        group = interaction(Diagnosis, VISIT))) +
+  geom_point(aes(color = Diagnosis), 
+             alpha = 0.45, 
+             position = position_jitterdodge()) +
+  stat_smooth(aes(color = Diagnosis, fill = Diagnosis), 
+              method = "lm", 
+              formula = y ~ poly(x, 2),
+              alpha = 0.6) +
+  theme_bw() +
+  scale_fill_tableau() +
+  scale_color_tableau() +
+  scale_x_continuous(breaks=seq(1,6,1)) +
+  labs(title = "Development of Child's MLU",
+       #subtitle = "", 
+       x = "Visit number", 
+       y = "Child's MLU")
+
+good
+
 
 
 ```
 
-Initial model - argue for the fact that we chose to include what we did in fact include. 
+The plot displays some trends in the data. Firstly, it shows that the two groups share an intercept because of the matching done by the experimenters. However, the TD group displays a steeper curve, showing that the TD children have a faster growth in their MLU. This indicates that there could be a significant interaction between diagnosis and visit. In addition, it appears like the growth decreases as a function of time, indicating that the development might follow a non-linear trend. Furthermore, the TD slope displays narrower confidence intervals, indicating smaller variance in this group compared to the ASD group. 
+
+## simple mixed effects model 
+In the mixed effects model, we chose to include 
 
 ```{r, echo = FALSE, messages = FALSE}
 #mixed model 
@@ -338,7 +416,11 @@ anova(final)
 
 r-squared for the best model 
 
-```{r}
+```{r, echo = FALSE, messages = FALSE}
 r.squaredGLMM(final)
+```
+
+```{r, echo = FALSE, messages = FALSE}
+
 ```
 
