@@ -344,7 +344,7 @@ good
 The plot displays some trends in the data. Firstly, it shows that the two groups share an intercept because of the matching done by the experimenters. However, the TD group displays a steeper curve, showing that the TD children have a faster growth in their MLU. This indicates that there could be a significant interaction between diagnosis and visit. In addition, it appears like the growth decreases as a function of time, indicating that the development might follow a non-linear trend. Furthermore, the TD slope displays narrower confidence intervals, indicating smaller variance in this group compared to the ASD group. 
 
 ## simple mixed effects model 
-In the mixed effects model, we chose to include 
+In the mixed effects model, we chose to include visit and diagnosis as fixed effects. Based on the prior plot we decided to let them interact. In addition we included a random slope for visit over subject. 
 
 ```{r, echo = FALSE, messages = FALSE}
 #mixed model 
@@ -352,7 +352,11 @@ summary(mixed_model) #VISIT very significant, DiagnosisTD not significant.
 r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
 ```
 
-testing the model with interaction (mixed_model) against the one without (model_noint)
+Visit significantly predicted MLU, b = .10, t(352) = 3.75, p < .001.
+The interaction between visit and diagnosis was also found to be significant, b = .25, t(352), p < .001.
+
+## testing the model 
+To test the model we decided to compare it to a model without an interaction between diagnosis and visit, but otherwise identical. This was done with an ANOVA. 
 
 ```{r, echo = FALSE, messages = FALSE}
 #comparison of mixed model with the same without interaction 
@@ -360,7 +364,10 @@ anova(model_noint, mixed_model)
 
 ```
 
-plotting models with varrying higher order blabla
+The model with the interaction effect is significantly better than the simpler model. This is evident from p-value, AIC & BIC. 
+
+## higher order models (growth curves)
+Before creating higher order models (quadratic, cubic) we plottet to get an idea of how well they fit the data. 
 
 ```{r, echo=FALSE, messages = FALSE}
 #growth curves plot
@@ -368,13 +375,19 @@ plot_grid(plot1, plot2, plot3, labels = "AUTO")
 
 ```
 
-Seems like the data fits better with quadratic / cubic than linear
+It does seem from the plot like the linear model fits the data worse than the quadratic and cubic ones do. However, we need hard numbers - so let's go! 
+
+## Testing the different growth curves 
+Here, we are testing three models: a linear model, a quadratic model and a cubic model. They all share the same predictors, and only vary based on their higher order terms. 
 
 ```{r, echo=FALSE, messages = FALSE}
 #growth curves test 
 anova(m_quadratic, m_cubic, m_linear)
 
 ```
+
+The cubic model is significantly better than both the quadratic and the linear model. However, we decided to use the quadratic model. This was done for several reasons. First of all, the cubic model did not converge, and is less interpretable than the quadratic model. Secondly, we were worried that the cubic model would be prone to overfitting. It must also be noted that the quadratic model has a smaller BIC than the cubic model, indicating that the information criterion which penalizes..
+
 
 quadratic chosen because lowest BIC and interpretability 
 
