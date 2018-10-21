@@ -1,0 +1,344 @@
+---
+title: "markdown_onetwo"
+author: "Victor Møller"
+date: "20 okt 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#libraries
+library(pacman)
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, effects, MuMIn, cowplot) 
+
+#loading data
+data <- read.csv("language_dev_asd_clean_2.csv") #data from assignment 1 
+
+#right format 
+str(data) 
+
+#conversion
+data$SUBJ <- as.factor(data$SUBJ) 
+data$VISIT <- as.factor(data$VISIT)
+
+#well matched? 
+participants <- data %>%
+  filter(VISIT == 6)
+
+summary(participants$Diagnosis) #29 ASD & 32 TD 
+
+#creating subsets for age 
+data_ASD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "ASD") 
+
+data_TD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "TD") 
+
+#z-score for ASD
+data_ASD <- data_ASD %>% 
+  mutate(ageZ = scale(Age))
+
+data_TD <- data_TD %>%
+  mutate(ageZ = scale(Age))
+
+#summary ASD
+summary(data_ASD$ageZ) #bigger z-scores, some very old and young 
+which(data_ASD$ageZ > 2) # 
+which(data_ASD$ageZ < -2) #8
+
+#summary TD
+summary(data_TD$ageZ) #somewhat smaller z-scores 
+which(data_TD$ageZ > 2) #2, 29 
+which(data_TD$ageZ < -2) #none
+
+#comparing means 
+difference <- mean(data_TD$Age) - mean(data_ASD$Age)
+difference #huge difference of 12.6 (months older in general)
+
+#comparing means with Z
+z_diff <- mean(data_TD$ageZ) - mean(data_ASD$ageZ)
+z_diff #very very small. 
+
+#histograms
+hist(data_ASD$ageZ) #we have one huge outlier (younger)
+hist(data_TD$ageZ) #A couple of outliers (older)
+
+hist(data_ASD$Age) 
+hist(data_TD$Age) #don't get quite as old - matching production. 
+summary(data_ASD$Age) #18.77 - 42
+
+#Gender
+summary(data_ASD$Gender) #Female = 146, Male = 26
+summary(data_TD$Gender) #Female = 155, Male = 35
+
+#Ethnicity
+summary(data_ASD$Ethnicity) #ASD mainly white & some scattered. 
+summary(data_TD$Ethnicity) #TD only white & asian 
+
+#random intercepts
+data$Kid = factor(data$SUBJ) #from lecture 
+
+#plotting w. colors
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+#boxplot 
+ggplot(data, aes(Diagnosis, CHI_MLU))+
+  geom_boxplot() #outliers in ASD. 
+
+#beeswarm plot
+p_load(beeswarm)
+
+boxplot(CHI_MLU ~ Diagnosis, data = data, 
+  outline = FALSE,    
+  main = 'boxplot + beeswarm')
+beeswarm(CHI_MLU ~ Diagnosis, data = data, 
+  col = 4, pch = 16, add = TRUE)
+
+#violin plot 
+ggplot(data, aes(Diagnosis, CHI_MLU)) +
+  geom_violin(aes(fill = CHI_MLU)) +
+  geom_boxplot(width = 0.2)
+
+#linear mixed effects model 
+data$VISIT <- as.integer(data$VISIT) #crucial to run the model 
+
+model_data <- data %>%
+  filter(!is.na(CHI_MLU) & !is.na(VISIT) & !is.na(Diagnosis))
+
+#different potential models 
+library(MuMIn)
+
+mixed_model <- lmer(CHI_MLU ~ VISIT * Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+summary(mixed_model) #VISIT very significant, DiagnosisTD not significant. 
+r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
+
+#Other models 
+model_simple <- lmer(CHI_MLU ~ VISIT + (1+VISIT|SUBJ), model_data, REML=FALSE)
+model_diagnosis <- lmer(CHI_MLU ~ Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+model_noint <- lmer(CHI_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+#pairwise anova tests 
+anova(model_simple, mixed_model) #mixed model not sign. better
+anova(model_diagnosis, mixed_model) #mixed model sign. better
+anova(model_noint, mixed_model) #model_simple sign. better
+
+#r-squared for the two best models (model_simple, mixed_model)
+r.squaredGLMM(mixed_model) #mixed model has highest marginal r-squared. 
+r.squaredGLMM(model_noint) 
+
+#visualizing quadratic 
+plot2 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "", legend = "", title = "quadratic")
+
+#visualizing Cubic
+plot3 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3)) +
+  labs(x = "visit", y = "", title = "cubic")
+
+#visualizing linear
+plot1 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm") +
+  labs(x = "visit", y = "child mean length of utterance (MLU)", title = "linear")
+
+#spaghetti plot
+ggplot(data, aes(VISIT, CHI_MLU, slope = SUBJ, color = Diagnosis)) +
+  geom_smooth() #disgusting. 
+
+#different models 
+m_linear <- lmer(CHI_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+m_quadratic <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+m_cubic <- lmer(CHI_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#evaluating them 
+library(lmerTest)
+summary(m_cubic) #cubic seems to perform poorly (i.e., have non-significant effects)
+summary(m_quadratic) #quadratic seems to perform well (i.e., have significant effects)
+summary(m_linear)
+
+#comparing them 
+anova(m_linear, m_quadratic) #quadratic best
+anova(m_quadratic, m_cubic) #qubic best
+anova(m_linear, m_cubic) #qubic best 
+
+#comparison of r-squared 
+r.squaredGLMM(m_quadratic) # R2m = .23
+r.squaredGLMM(m_cubic) # R2m = .22
+r.squaredGLMM(m_linear) # R2m = .22
+
+#effects package plotting (quadratic)
+library(effects)
+ef <- effect("VISIT:Diagnosis", m_quadratic, xlevels = 6)
+summary(ef) #visit 3 
+
+eff_plot <- as.data.frame(ef)
+eff_plot
+
+ggplot(eff_plot, aes(VISIT, fit, color=Diagnosis)) + geom_point() + geom_errorbar(aes(ymin=fit-se, ymax=fit+se), width=0.4) + theme_bw(base_size=12)  
+
+#this only gives us 5 levels
+plot(predictorEffects(m_quadratic))
+
+#visualizing lineaer
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm") +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing quadratic 
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing Cubic
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3))
+
+#different models 
+mot_linear <- lmer(MOT_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+mot_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#summaries
+summary(mot_cubic) #needs interpretation
+summary(mot_quadratic) #needs interpretation 
+summary(mot_linear)
+
+#comparison
+anova(mot_linear, mot_quadratic, mot_cubic)
+
+#comparison pairwie 
+anova(mot_quadratic, mot_cubic) #cubic not significantly better
+anova(mot_linear, mot_quadratic) #quadratic significantly better 
+
+#r-squared
+r.squaredGLMM(mot_quadratic) # R2m = .24
+r.squaredGLMM(mot_cubic) # R2m = .23
+r.squaredGLMM(mot_linear) # R2m = .23 
+
+#initial correlation
+cor_data = select(model_data, VISIT, Age, ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU, types_MOT, tokens_MOT, types_CHI, tokens_CHI, CHI_MLU) %>%
+  filter(!is.na(Age))
+
+corr = round(cor(cor_data,method = "spearman"),2)
+
+#stepwise w. lmer for quadratic  
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1, data = model_data, REML=FALSE)
+summary(big_model)
+
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + verbalIQ_1, data = model_data, REML=FALSE)
+
+(step_res <- step(big_model))
+final <- get_model(step_res)
+anova(final) 
+summary(final) #works, good t-values 
+
+#compared to the quadratic model earlier 
+anova(m_quadratic, big_model) 
+anova(big_model) 
+
+#r-squared
+r.squaredGLMM(big_model) #R2m .6
+```
+
+Hypothesis 1 
+
+Plotting 
+
+```{r cars, echo = FALSE, messages = FALSE}
+#plotting w. colors
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  geom_smooth()
+
+
+```
+
+Initial model - argue for the fact that we chose to include what we did in fact include. 
+
+```{r, echo = FALSE, messages = FALSE}
+#mixed model 
+summary(mixed_model) #VISIT very significant, DiagnosisTD not significant. 
+r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
+```
+
+testing the model with interaction (mixed_model) against the one without (model_noint)
+
+```{r, echo = FALSE, messages = FALSE}
+#comparison of mixed model with the same without interaction 
+anova(model_noint, mixed_model)
+
+```
+
+plotting models with varrying higher order blabla
+
+```{r, echo=FALSE, messages = FALSE}
+#growth curves plot
+plot_grid(plot1, plot2, plot3, labels = "AUTO")
+
+```
+
+Seems like the data fits better with quadratic / cubic than linear
+
+```{r, echo=FALSE, messages = FALSE}
+#growth curves test 
+anova(m_quadratic, m_cubic, m_linear)
+
+```
+
+quadratic chosen because lowest BIC and interpretability 
+
+```{r, echo=FALSE, messages = FALSE}
+#r-squared of the chosen model
+r.squaredGLMM(m_cubic) 
+```
+
+other r-squared values at github. 
+
+```{r, echo=FALSE, messages = FALSE}
+
+```
+
+[report results]
+
+-------------------------------------------------------------------------------------------------
+
+Hypothesis 2
+
+```{r, echo=FALSE, messages = FALSE}
+#comparison of models for mommy (beware of BIC)
+anova(mot_linear, mot_quadratic, mot_cubic)
+```
+
+```{r, echo=FALSE, messages = FALSE}
+#r-squared for best model - perhaps replace with linear. 
+r.squaredGLMM(mot_quadratic)
+```
+
+[report results]
+
+exercise 4
+output of the best model (explain how we got here baby)
+
+```{r, echo=FALSE, messages = FALSE}
+anova(final) 
+```
+
+r-squared for the best model 
+
+```{r}
+r.squaredGLMM(final)
+```
+
