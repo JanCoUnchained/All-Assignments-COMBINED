@@ -1,0 +1,444 @@
+---
+title: "Assignment 1 & 2"
+subtitle: "Data cleaning & Model Building"
+author: "Magnus BK, Carl-Magnus, Jan Kostkan, Anders Weile, Victor Møller"
+date: "\today{}"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#libraries
+library(pacman)
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, effects, MuMIn, cowplot,ggthemes,magick) 
+
+#loading data
+data <- read.csv("language_dev_asd_clean_2.csv") #data from assignment 1 
+
+#right format 
+str(data) 
+
+#conversion
+data$SUBJ <- as.factor(data$SUBJ) 
+data$VISIT <- as.factor(data$VISIT)
+
+#well matched? 
+participants <- data %>%
+  filter(VISIT == 6)
+
+summary(participants$Diagnosis) #29 ASD & 32 TD 
+
+#creating subsets for age 
+data_ASD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "ASD") 
+
+data_TD <- data %>%
+  filter(!is.na(Age) & VISIT == 1 & Diagnosis == "TD") 
+
+#z-score for ASD
+data_ASD <- data_ASD %>% 
+  mutate(ageZ = scale(Age))
+
+data_TD <- data_TD %>%
+  mutate(ageZ = scale(Age))
+
+#summary ASD
+summary(data_ASD$ageZ) #bigger z-scores, some very old and young 
+which(data_ASD$ageZ > 2) # 
+which(data_ASD$ageZ < -2) #8
+
+#summary TD
+summary(data_TD$ageZ) #somewhat smaller z-scores 
+which(data_TD$ageZ > 2) #2, 29 
+which(data_TD$ageZ < -2) #none
+
+#comparing means 
+difference <- mean(data_TD$Age) - mean(data_ASD$Age)
+difference #huge difference of 12.6 (months older in general)
+
+#comparing means with Z
+z_diff <- mean(data_TD$ageZ) - mean(data_ASD$ageZ)
+z_diff #very very small. 
+
+#histograms
+hist(data_ASD$ageZ) #we have one huge outlier (younger)
+hist(data_TD$ageZ) #A couple of outliers (older)
+
+hist(data_ASD$Age) 
+hist(data_TD$Age) #don't get quite as old - matching production. 
+summary(data_ASD$Age) #18.77 - 42
+
+#Gender
+summary(data_ASD$Gender) #Female = 146, Male = 26
+summary(data_TD$Gender) #Female = 155, Male = 35
+
+#Ethnicity
+summary(data_ASD$Ethnicity) #ASD mainly white & some scattered. 
+summary(data_TD$Ethnicity) #TD only white & asian 
+
+#random intercepts
+data$Kid = factor(data$SUBJ) #from lecture 
+
+#plotting w. colors
+ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+#boxplot 
+ggplot(data, aes(Diagnosis, CHI_MLU))+
+  geom_boxplot() #outliers in ASD. 
+
+#beeswarm plot
+p_load(beeswarm)
+
+boxplot(CHI_MLU ~ Diagnosis, data = data, 
+  outline = FALSE,    
+  main = 'boxplot + beeswarm')
+beeswarm(CHI_MLU ~ Diagnosis, data = data, 
+  col = 4, pch = 16, add = TRUE)
+
+#violin plot 
+ggplot(data, aes(Diagnosis, CHI_MLU)) +
+  geom_violin(aes(fill = CHI_MLU)) +
+  geom_boxplot(width = 0.2)
+
+#linear mixed effects model 
+data$VISIT <- as.integer(data$VISIT) #crucial to run the model 
+
+model_data <- data %>%
+  filter(!is.na(CHI_MLU) & !is.na(VISIT) & !is.na(Diagnosis))
+
+#different potential models 
+library(MuMIn)
+
+mixed_model <- lmer(CHI_MLU ~ VISIT * Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+summary(mixed_model) #VISIT very significant, DiagnosisTD not significant. 
+r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
+
+#Other models 
+model_simple <- lmer(CHI_MLU ~ VISIT + (1+VISIT|SUBJ), model_data, REML=FALSE)
+model_diagnosis <- lmer(CHI_MLU ~ Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+model_noint <- lmer(CHI_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+#pairwise anova tests 
+anova(model_simple, mixed_model) #mixed model not sign. better
+anova(model_diagnosis, mixed_model) #mixed model sign. better
+anova(model_noint, mixed_model) #model_simple sign. better
+
+#r-squared for the two best models (model_simple, mixed_model)
+r.squaredGLMM(mixed_model) #mixed model has highest marginal r-squared. 
+r.squaredGLMM(model_noint) 
+
+#visualizing quadratic 
+plot2 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "", legend = "", title = "quadratic")
+
+#visualizing Cubic
+plot3 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3)) +
+  labs(x = "visit", y = "", title = "cubic")
+
+#visualizing linear
+plot1 <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm") +
+  labs(x = "visit", y = "child mean length of utterance (MLU)", title = "linear")
+
+#spaghetti plot
+ggplot(data, aes(VISIT, CHI_MLU, slope = SUBJ, color = Diagnosis)) +
+  geom_smooth() #disgusting. 
+
+#different models 
+m_linear <- lmer(CHI_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+m_quadratic <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+m_cubic <- lmer(CHI_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#evaluating them 
+library(lmerTest)
+summary(m_cubic) #cubic seems to perform poorly (i.e., have non-significant effects)
+summary(m_quadratic) #quadratic seems to perform well (i.e., have significant effects)
+summary(m_linear)
+
+#comparing them 
+anova(m_linear, m_quadratic) #quadratic best
+anova(m_quadratic, m_cubic) #qubic best
+anova(m_linear, m_cubic) #qubic best 
+
+#comparison of r-squared 
+r.squaredGLMM(m_quadratic) # R2m = .23
+r.squaredGLMM(m_cubic) # R2m = .22
+r.squaredGLMM(m_linear) # R2m = .22
+
+#effects package plotting (quadratic)
+library(effects)
+ef <- effect("VISIT:Diagnosis", m_quadratic, xlevels = 6)
+summary(ef) #visit 3 
+
+eff_plot <- as.data.frame(ef)
+eff_plot
+
+ggplot(eff_plot, aes(VISIT, fit, color=Diagnosis)) + geom_point() + geom_errorbar(aes(ymin=fit-se, ymax=fit+se), width=0.4) + theme_bw(base_size=12)  
+
+#this only gives us 5 levels
+plot(predictorEffects(m_quadratic))
+
+#visualizing lineaer
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm") +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing quadratic 
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  labs(x = "visit", y = "mother mean length of utterance (MLU)")
+
+#visualizing Cubic
+ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 3))
+
+#different models 
+mot_linear <- lmer(MOT_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+mot_quadratic <- lmer(MOT_MLU ~ VISIT + I(VISIT^2) + Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+mot_cubic <- lmer(MOT_MLU ~ VISIT+ I(VISIT^2)+ I(VISIT^3) + Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#summaries
+summary(mot_cubic) #needs interpretation
+summary(mot_quadratic) #needs interpretation 
+summary(mot_linear)
+
+#comparison
+anova(mot_linear, mot_quadratic, mot_cubic)
+
+#comparison pairwie 
+anova(mot_quadratic, mot_cubic) #cubic not significantly better
+anova(mot_linear, mot_quadratic) #quadratic significantly better 
+
+#r-squared
+r.squaredGLMM(mot_quadratic) # R2m = .24
+r.squaredGLMM(mot_cubic) # R2m = .23
+r.squaredGLMM(mot_linear) # R2m = .23 
+
+#initial correlation
+cor_data = select(model_data, VISIT, Age, ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU, types_MOT, tokens_MOT, types_CHI, tokens_CHI, CHI_MLU) %>%
+  filter(!is.na(Age))
+
+corr = round(cor(cor_data,method = "spearman"),2)
+
+#stepwise w. lmer for quadratic  
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1, data = model_data, REML=FALSE)
+summary(big_model)
+
+big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + verbalIQ_1, data = model_data, REML=FALSE)
+
+(step_res <- step(big_model))
+final <- get_model(step_res)
+anova(final) 
+summary(final) #works, good t-values 
+
+#compared to the quadratic model earlier 
+anova(m_quadratic, big_model) 
+anova(big_model) 
+
+#r-squared
+r.squaredGLMM(big_model) #R2m .6
+```
+
+\tableofcontents
+
+# Exercise 1) Characterizing the participants:
+
+## Evaluating how the groups match:
+
+* Number of participants: The two groups are relatively well matched. At the beginning of the experiment the group containing the typically-developing children is slightly larger: (ASD: 29, TD: 32). However, the group sizes equal out by visit 6 (28 participants in both groups).
+
+* Mean MLU at first visit: The groups are well matched in MLU at the first visit.
+
+* Age: The mean age of the two groups are not well matched. The participants in the ASD group are on average 12.63 months older than those in the TD group. Additionally, the age distribution of the ASD contains more variance than the TD group, perhaps because of more within-group variability in language development. This could be a confounding factor, since the older children in the ASD group might have a slower growth curve than the younger ones. However, the main aim has been to match the children by their mean MLU, which is what has been primarily controlled for by the experimenters.
+
+* Ethnicity: Pretty well-matched between ASD and TD. However, both samples consist mainly of white people. Number of participants of other ethnic groups did not exceed 2 in either group. Thus, the variable does not seem to be of much value.
+
+* Gender: The groups are well matched (ASD: M: 25 & F: 4) (TD: M: 26 & F: 6) → Males are prevalent in both groups, so one should be careful with extrapolation from findings to the wider population (especially women).
+
+
+## Hypothesis 1: 
+Children with ASD display a language impairment
+
+Before creating our statistical model, we plot the data. 
+We used a combined **svliocatooth** plot to highlight the development between the groups as well as the variability for both groups. 
+```{r cars, echo = FALSE, messages = FALSE}
+#plotting w. colors
+# SPLIT VIIOLIN FUNCITON
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, 
+                           draw_group = function(self, data, ..., draw_quantiles = NULL) {
+                             data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+                             grp <- data[1, "group"]
+                             newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
+                             newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+                             newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
+                             
+                             if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+                               stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <=
+                                                                         1))
+                               quantiles <- ggplot2:::create_quantile_segment_frame(data, draw_quantiles)
+                               aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+                               aesthetics$alpha <- rep(1, nrow(quantiles))
+                               both <- cbind(quantiles, aesthetics)
+                               quantile_grob <- GeomPath$draw_panel(both, ...)
+                               ggplot2:::ggname("geom_split_violin", grid::grobTree(GeomPolygon$draw_panel(newdata, ...), quantile_grob))
+                             }
+                             else {
+                               ggplot2:::ggname("geom_split_violin", GeomPolygon$draw_panel(newdata, ...))
+                             }
+                           })
+
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
+                              draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, 
+                              show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, 
+        position = position, show.legend = show.legend, inherit.aes = inherit.aes, 
+        params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
+
+
+## THE PLOT
+good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
+  geom_split_violin(alpha = 0.6, 
+                    bw = "nrd0",
+                    width = 1.2,
+                    scale = "count",
+                    aes(fill = Diagnosis, 
+                        group = interaction(Diagnosis, VISIT))) +
+  geom_point(aes(color = Diagnosis), 
+             alpha = 0.45, 
+             position = position_jitterdodge()) +
+  stat_smooth(aes(color = Diagnosis, fill = Diagnosis), 
+              method = "lm", 
+              formula = y ~ poly(x, 2),
+              alpha = 0.6) +
+  theme_bw() +
+  scale_fill_tableau() +
+  scale_color_tableau() +
+  scale_x_continuous(breaks=seq(1,6,1)) +
+  labs(title = "Development of Child's MLU",
+       #subtitle = "", 
+       x = "Visit number", 
+       y = "Child's MLU")
+
+good
+
+
+
+```
+
+The plot displays some trends in the data. Firstly, it shows that the two groups share an intercept because of the matching done by the experimenters. However, the TD group displays a steeper curve, showing that the TD children have a faster growth in their MLU. This indicates that there could be a significant interaction between diagnosis and visit. In addition, it appears like the growth decreases as a function of time, indicating that the development might follow a non-linear trend. Furthermore, the TD slope displays narrower confidence intervals, indicating smaller variance in this group compared to the ASD group. 
+
+## simple mixed effects model 
+In the mixed effects model, we chose to include visit and diagnosis as fixed effects. Based on the prior plot we decided to let them interact. In addition we included a random slope for visit over subject. 
+
+```{r, echo = FALSE, messages = FALSE}
+#mixed model 
+summary(mixed_model) #VISIT very significant, DiagnosisTD not significant. 
+r.squaredGLMM(mixed_model) #R2m = fixed, R2c = fixed + random. 
+```
+
+Visit significantly predicted MLU, b = .10, t(352) = 3.75, p < .001.
+The interaction between visit and diagnosis was also found to be significant, b = .25, t(352), p < .001.
+
+## testing the model 
+To test the model we decided to compare it to a model without an interaction between diagnosis and visit, but otherwise identical. This was done with an ANOVA. 
+
+```{r, echo = FALSE, messages = FALSE}
+#comparison of mixed model with the same without interaction 
+anova(model_noint, mixed_model)
+
+```
+
+The model with the interaction effect is significantly better than the simpler model. This is evident from p-value, AIC & BIC. 
+
+## higher order models (growth curves)
+Before creating higher order models (quadratic, cubic) we plottet to get an idea of how well they fit the data. 
+
+```{r, echo=FALSE, messages = FALSE}
+#growth curves plot
+plot_grid(plot1, plot2, plot3, labels = "AUTO")
+
+```
+
+It does seem from the plot like the linear model fits the data worse than the quadratic and cubic ones do. However, we need hard numbers - so let's go! 
+
+## Testing the different growth curves 
+Here, we are testing three models: a linear model, a quadratic model and a cubic model. They all share the same predictors, and only vary based on their higher order terms. 
+
+```{r, echo=FALSE, messages = FALSE}
+#growth curves test 
+anova(m_quadratic, m_cubic, m_linear)
+
+```
+
+The cubic model is significantly better than both the quadratic and the linear model. However, we decided to use the quadratic model. This was done for several reasons. First of all, the cubic model did not converge, and is less interpretable than the quadratic model. Secondly, we were worried that the cubic model would be prone to overfitting. It must also be noted that the quadratic model has a smaller BIC than the cubic model, indicating that the information criterion which penalizes..
+
+
+quadratic chosen because lowest BIC and interpretability 
+
+```{r, echo=FALSE, messages = FALSE}
+#r-squared of the chosen model
+r.squaredGLMM(m_cubic) 
+```
+
+WRITE HERE
+
+-------------------------------------------------------------------------------------------------
+
+# Hypothesis 2: Parents speak equally to children with ASD and TD
+Initially we created three models for mother MLU (linear, quadratic, cubic).
+Because we found an interaction between diagnosis and time for the children, we initially included the it here as well. However, there are no significant interactions, so subsequently we deleted the interaction term. 
+
+```{r, echo=FALSE, messages = FALSE}
+#comparison of models for mommy (beware of BIC)
+anova(mot_linear, mot_quadratic, mot_cubic)
+```
+
+The quadratic model is a significantly (based on p-value) better fit than the linear model, while the cubic model does not fit the data well. However, as was the case for the child MLU, there is not consensus between the AIC and BIC as to which model is best. The linear model has a lower BIC-value than the quadratic model, while the quadratic model has a lower AIC-value than the linear. This again reflects the notion that BIC penalizes additional terms more heavily than the AIC. However, in order to avoid consistency, we chose the use the quadratic model this time. 
+
+## evaluating the model and hypotheses 
+
+```{r, echo=FALSE, messages = FALSE}
+#r-squared for best model - perhaps replace with linear. 
+summary(mot_quadratic)
+r.squaredGLMM(mot_quadratic)
+```
+
+Mother MLU is significantly predicted by both visit, b = 0.28, t(352) = 4.26, p < 0.001. It is also significantly predicted by visit^2, b = 0.02, t(352) = -2.73, p < 0.01. Lastly it is significantly predicted by diagnosis, b = 0.49, t(352) = 4.45, p < 0.001. 
+
+These values show that mother MLU does in fact change over time and according to diagnosis. We can thus disconfirm hypothesis 2, that parents talk equally to children with ASD and TD children. 
+
+The fixed effects (diagnosis and visit) account for 23% of the variance observed in mother MLU (R2m). The random effects account for 0.7 (R2c) - 0.23 = 0.47 (47% of the variance).
+
+# exercise 4
+In order to create an optimized model we recreated the quadratic model from earlier, and used an algorithm based on information criteria to recursively exclude variables that do not improve the information criteria. We did allow the model to use predictors that were not independent of child MLU (linguistic data from children and mothers). The process left us with a model identical to m_quadratic, but with the added fixed effect verbalIQ_1. 
+
+```{r, echo=FALSE, messages = FALSE}
+summary(final)
+```
+
+The final model contains 5 significant predictors of child MLU, visit, visit^2, diagnosis, verbalIQ_1 and the interaction between visit and diagnosis. 
+
+```{r, echo = FALSE, messages = FALSE}
+r.squaredGLMM(final)
+anova(m_quadratic, final)
+```
+
+The marginal R-squared shows that the 5 fixed effects explain 59% of the variability in child MLU. The conditional R-squared shows that with the random effects, the model can account for 85% of the observed variance. 
+
+The ANOVA shows that the final model a significantly better predictor of child MLU. 
