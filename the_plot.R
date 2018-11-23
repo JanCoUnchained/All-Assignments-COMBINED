@@ -57,10 +57,8 @@ good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
   scale_color_tableau() +
   scale_x_continuous(breaks=seq(1,6,1)) +
   labs(title = "Development of Child's MLU",
-       #subtitle = "", 
+       #subtitle = "Illustrated by quadratic models", 
        x = "Visit number", 
        y = "Child's MLU")
 
-#ggdraw() +
-#  draw_image("http://digitalsociety.dk/wp-content/uploads/2017/09/Riccardo-Fusaroli-.jpg") +
-#  draw_plot(good)
+good
