@@ -35,7 +35,7 @@ Load necessary libraries : what will you need?
 ```{r Load Libraries, include = FALSE}
 
 library(pacman)
-p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest) 
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, ggthemes, ggExtra) 
 
 ```
 
@@ -264,14 +264,15 @@ good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
   theme_bw() +
   scale_fill_tableau() +
   scale_color_tableau() +
-  scale_x_continuous(breaks=seq(1,6,1)) +
+  scale_x_continuous(breaks= c(1:6)) +
+  removeGridX() +
   labs(title = "Development of Child's MLU",
-       #subtitle = "", 
+       subtitle = "Dots are based on predictions & around the lines are prediction intervals\nThe thicker the violin the higher the density in that part of the distribution", 
+       caption = "(A JanCo production..)",
        x = "Visit number", 
        y = "Child's MLU")
 
-good
-
+good 
 
 p_load(cowplot)
 plot_grid(plot1, plot2, plot3, labels = "AUTO")
@@ -351,7 +352,7 @@ ggplot(data, aes(as.numeric(VISIT), MOT_MLU, color = Diagnosis)) +
   geom_point() + 
   stat_smooth(method = "lm", formula = y ~ poly(x, 3))
 
-#different models 
+#models for mother with interaction
 mot_linear <- lmer(MOT_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
 
 mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
@@ -359,8 +360,20 @@ mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VI
 mot_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
 
 #summaries
-summary(mot_cubic) #needs interpretation
-summary(mot_quadratic) #needs interpretation 
+summary(mot_cubic) 
+summary(mot_quadratic) 
+summary(mot_linear)
+
+#models for mother without interaction
+mot_linear <- lmer(MOT_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ), data = model_data, REML=FALSE)
+
+mot_quadratic <- lmer(MOT_MLU ~ (VISIT + I(VISIT^2)) + Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = model_data, REML=FALSE)
+
+mot_cubic <- lmer(MOT_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3)) + Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ), data = model_data, REML=FALSE)
+
+#summaries
+summary(mot_cubic) 
+summary(mot_quadratic) 
 summary(mot_linear)
 
 #comparison
@@ -383,35 +396,68 @@ r.squaredGLMM(mot_linear) # R2m = .23
 
 Your task now is to figure out how to best describe the children linguistic trajectory. The dataset contains a bunch of additional demographic, cognitive and clinical variables (e.g.verbal and non-verbal IQ). Try them out and identify the statistical models that best describes your data (that is, the children's MLU). Describe how you selected the best model and send the code to run the model to Malte (au540041@post.au.dk).
 
+### NOTES ###
+
+the model 'final' is now called 'big_model_new'. 
 
 ```{r ex4, include = FALSE}
 
-#initial correlation
+#correlation to get an idea of which predictors correlate 
 cor_data = select(model_data, VISIT, Age, ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU, types_MOT, tokens_MOT, types_CHI, tokens_CHI, CHI_MLU) %>%
   filter(!is.na(Age))
 
+#types_CHI, tokens_CHI & CHI_MLU (predicted) correlate very strongly. 
 corr = round(cor(cor_data,method = "spearman"),2)
 corrplot(corr)
 
-#stepwise w. lmer for quadratic  
-big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1, data = model_data, REML=FALSE)
+#the initial big model (quadratic) without tokens & types from the child because (1) it doesn't make conceptual sense to use those and (2) the corrplot shows that they are virtually the same as the predicted value. In this model we are also going to exclude tokens & types from mother because it would be interesting to see how well we can predict the child without the mother. 
+big_model <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ), data = model_data, REML = FALSE)
 summary(big_model)
 
-big_model <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ) + verbalIQ_1, data = model_data, REML=FALSE)
+#only selecting the significant predictors 
+big_model_significant <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ), data = model_data, REML = FALSE)
 
-(step_res <- step(big_model))
-final <- get_model(step_res)
-anova(final) 
-summary(final) #works, good t-values 
+#should some of the (significant) predictors be omitted bc. of shared variance? here we are relying on step() which uses information criterion. 
+(step_res <- step(big_model_significant))
+big_model_new <- get_model(step_res)
+anova(big_model_new) 
+summary(big_model_new) 
 
-#compared to the quadratic model earlier 
-anova(m_quadratic, final) 
-anova(final) 
+#all of the predictors made the AIC better (smaller) so we keep them all. 
+
+#compared to the quadratic model earlier (previous best)
+anova(m_quadratic, big_model_new) 
 
 #r-squared
-r.squaredGLMM(final) #R2m .6
+r.squaredGLMM(big_model_new) #R2m .6
 
 ```
+
+We will now do virtually the same as in the chunk above, however - we will now include tokens & types from mother and see whether this actually makes the model better. The question is whether this would make sense in a "real-life" situation. However, we will still exclude tokens & types from child because that does not make conceptual sense. 
+
+```{r}
+#the big model - now with mother types & tokens
+big_model_plus <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + types_MOT + tokens_MOT + (1+VISIT +(VISIT^2)|SUBJ), data = model_data, REML = FALSE)
+summary(big_model_plus)
+
+#only selecting the significant predictors - now with tokens_MOT. 
+big_model_significant_plus <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + tokens_MOT + (1+VISIT +(VISIT^2)|SUBJ), data = model_data, REML = FALSE)
+
+#running the step() function on the new model (with tokens_MOT)
+(step_res <- step(big_model_significant_plus))
+big_model_new_plus <- get_model(step_res)
+anova(big_model_new_plus) 
+summary(big_model_new_plus) 
+
+```
+
+The resulting 'big_model_new_plus' contains the same variables as the model from the previous chunk 'big_model_new'. Even though tokens_MOT is initially significant, it takes variance from the other predictors and thus makes the AIC worse (bigger). Thus it gets excluded in the step() function. We thus stick with the 'big_model_new' as our best model (which will be used in subsequent assignments). It must be noted that a better model is most likely possible with the inclusion of the childs own speaking data (tokens, types). However, we judged this to make little conceptual sense, and thus chose not to include it. 
+
+```{r}
+
+#making dataframe
+```
+
 
 [REPORT THE RESULTS]
 
