@@ -9,66 +9,70 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 #load libraries
 library(pacman)
-p_load(tidyverse, lmerTest, merTools, Metrics, caret)
+p_load(tidyverse, 
+       lmerTest, merTools, Metrics, caret, #modeling
+       groupdata2, #folds
+       ggthemes, RColorBrewer) #plotting
+
 #due to troubles with select-function, we make sure that R always uses the select-function from dplyr
 select <- dplyr::select
 
 # TEST DATA PREPROCESSING
-demo_test_raw <- read.csv("A1_P1/demo_test.csv")
-lu_test_raw <- read.csv("A1_P1/LU_test.csv")
-token_test_raw <- read.csv("A1_P1/token_test.csv")
-
-demo <- demo_test_raw %>%
-  rename(SUBJ = Child.ID, VISIT = Visit) %>% #last argument renamed to first argument. 
-  mutate(Age = as.character(Age),
-         Age = str_replace_all(Age, ",", "."), #dots instead of comma. 
-         Age = as.numeric(Age))
-
-lu <- lu_test_raw %>%
-  mutate(VISIT = str_extract(VISIT, "[0-9]"), #regex indicating that we only want digits. 
-         VISIT = as.integer(VISIT)) #as integer, as there is now only digits. 
-
-token <- token_test_raw %>%
-  mutate(VISIT = as.character(VISIT), #same as above. 
-         VISIT = str_extract(VISIT, "[0-9]"),
-         VISIT = as.integer(VISIT)) %>%
-  mutate(SUBJ = ifelse(str_detect(SUBJ, "[a-z]"), str_remove(SUBJ, ".$"), as.character(SUBJ)))
-
-lu_2 <- lu %>%
-  mutate(SUBJ = ifelse(str_detect(SUBJ, "[a-z]"), str_remove(SUBJ, ".$"), as.character(SUBJ)))
-
-int_var <- unlist(str_split("SUBJ, VISIT, Ethnicity, Diagnosis, Gender, Age, ADOS, MullenRaw, ExpressiveLangRaw, MOT_MLU, MOT_LUstd, CHI_MLU, CHI_LUstd, types_MOT, types_CHI, tokens_MOT, tokens_CHI"
-                     ,", "))
-
-demo_3 <- demo %>%
-  select(one_of(int_var)) %>% #selecting variables that are also in the list: one_of
-  rename(nonVerbalIQ = MullenRaw, verbalIQ = ExpressiveLangRaw) #renaming MullenRaw & ExpressiveLangRaw to nonVerbalIq & verbalIQ. 
-
-lu_3 <- lu_2 %>%
-  select(one_of(int_var))
-
-token_3 <- token %>%
-  select(one_of(int_var))
-
-data <- demo_3 %>% #demo has to be first because it is the biggest
-  left_join(lu_3, by = c("SUBJ", "VISIT")) %>% #Joining SUBJ & VISIT which are common to all 
-  left_join(token_3, by = c("SUBJ", "VISIT")) #Left join ensures that it the incomplete rows are kept.
-
-data_2 <- data %>% #selecting variables with many NAs 
-  select(SUBJ, VISIT, ADOS_1 = ADOS, nonVerbalIQ_1 = nonVerbalIQ, verbalIQ_1 = verbalIQ) %>% 
-  filter(VISIT == 1) %>% #filtering by VISIT = 1
-  right_join(data, by = c("SUBJ")) %>% #right-join bypasses new steps. 
-  select(-VISIT.x, -ADOS, -nonVerbalIQ, -verbalIQ) %>% #
-  select(SUBJ, VISIT = VISIT.y, Diagnosis, Age, Gender, Ethnicity, 
-         ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU:tokens_CHI)
-
-data_3 <- data_2 %>%
-  mutate(SUBJ = as.integer(factor(SUBJ)),
-         Gender = ifelse(Gender == 1, "M", "F"), #changes the Gender
-         Diagnosis = ifelse(Diagnosis == "A", "ASD", "TD")) #changes diagnosis
-
-#write 
-write_csv(data_3, "test_clean.csv")
+# demo_test_raw <- read.csv("A1_P1/demo_test.csv")
+# lu_test_raw <- read.csv("A1_P1/LU_test.csv")
+# token_test_raw <- read.csv("A1_P1/token_test.csv")
+# 
+# demo <- demo_test_raw %>%
+#   rename(SUBJ = Child.ID, VISIT = Visit) %>% #last argument renamed to first argument. 
+#   mutate(Age = as.character(Age),
+#          Age = str_replace_all(Age, ",", "."), #dots instead of comma. 
+#          Age = as.numeric(Age))
+# 
+# lu <- lu_test_raw %>%
+#   mutate(VISIT = str_extract(VISIT, "[0-9]"), #regex indicating that we only want digits. 
+#          VISIT = as.integer(VISIT)) #as integer, as there is now only digits. 
+# 
+# token <- token_test_raw %>%
+#   mutate(VISIT = as.character(VISIT), #same as above. 
+#          VISIT = str_extract(VISIT, "[0-9]"),
+#          VISIT = as.integer(VISIT)) %>%
+#   mutate(SUBJ = ifelse(str_detect(SUBJ, "[a-z]"), str_remove(SUBJ, ".$"), as.character(SUBJ)))
+# 
+# lu_2 <- lu %>%
+#   mutate(SUBJ = ifelse(str_detect(SUBJ, "[a-z]"), str_remove(SUBJ, ".$"), as.character(SUBJ)))
+# 
+# int_var <- unlist(str_split("SUBJ, VISIT, Ethnicity, Diagnosis, Gender, Age, ADOS, MullenRaw, ExpressiveLangRaw, MOT_MLU, MOT_LUstd, CHI_MLU, CHI_LUstd, types_MOT, types_CHI, tokens_MOT, tokens_CHI"
+#                      ,", "))
+# 
+# demo_3 <- demo %>%
+#   select(one_of(int_var)) %>% #selecting variables that are also in the list: one_of
+#   rename(nonVerbalIQ = MullenRaw, verbalIQ = ExpressiveLangRaw) #renaming MullenRaw & ExpressiveLangRaw to nonVerbalIq & verbalIQ. 
+# 
+# lu_3 <- lu_2 %>%
+#   select(one_of(int_var))
+# 
+# token_3 <- token %>%
+#   select(one_of(int_var))
+# 
+# data <- demo_3 %>% #demo has to be first because it is the biggest
+#   left_join(lu_3, by = c("SUBJ", "VISIT")) %>% #Joining SUBJ & VISIT which are common to all 
+#   left_join(token_3, by = c("SUBJ", "VISIT")) #Left join ensures that it the incomplete rows are kept.
+# 
+# data_2 <- data %>% #selecting variables with many NAs 
+#   select(SUBJ, VISIT, ADOS_1 = ADOS, nonVerbalIQ_1 = nonVerbalIQ, verbalIQ_1 = verbalIQ) %>% 
+#   filter(VISIT == 1) %>% #filtering by VISIT = 1
+#   right_join(data, by = c("SUBJ")) %>% #right-join bypasses new steps. 
+#   select(-VISIT.x, -ADOS, -nonVerbalIQ, -verbalIQ) %>% #
+#   select(SUBJ, VISIT = VISIT.y, Diagnosis, Age, Gender, Ethnicity, 
+#          ADOS_1, nonVerbalIQ_1, verbalIQ_1, MOT_MLU:tokens_CHI)
+# 
+# data_3 <- data_2 %>%
+#   mutate(SUBJ = as.integer(factor(SUBJ)),
+#          Gender = ifelse(Gender == 1, "M", "F"), #changes the Gender
+#          Diagnosis = ifelse(Diagnosis == "A", "ASD", "TD")) #changes diagnosis
+# 
+# #write 
+# write_csv(data_3, "test_clean.csv")
 ```
 
 ## Welcome to the third exciting part of the Language Development in ASD exercise
@@ -114,11 +118,11 @@ big_model_new <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + ver
 ## comparing basic and big models on TRAINING SET
 ```{r}
 #rmse TRAIN
-rmse(train$CHI_MLU, predict(simple))
-rmse(train$CHI_MLU, predict(big_model_new))
+rmse(train$CHI_MLU, predict(basic)) / sd(train$CHI_MLU)
+rmse(train$CHI_MLU, predict(big_model_new)) / sd(train$CHI_MLU)
 
 #interval TRAIN
-int_TR_simple <- predictInterval(simple, train, level = .95) %>%
+int_TR_simple <- predictInterval(basic, train, level = .95) %>%
   cbind(train) %>%
   rownames_to_column()
 
@@ -128,33 +132,33 @@ int_TR_big <- predictInterval(big_model_new, train, level = .95) %>%
 
 
 # plotting TR_simple
-int_TR_big %>%
-  ggplot(aes(x = VISIT, y = fit, ymin = lwr, ymax = upr, color = Diagnosis)) +
-  geom_point() +
-  geom_linerange(position = "jitter")
+int_TR_simple %>%
+  ggplot(aes(x = as.numeric(VISIT),
+             y = fit,
+             group = factor(SUBJ),
+             color = Diagnosis, 
+             fill = Diagnosis)) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  theme_bw() +
+  facet_wrap(~Diagnosis) +
+  labs(title = "Train",
+       subtitle = "CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)")
+
 
 # plotting TR_big
-
-
-#plotting simple 
-int_TR_simple %>%
-  ggplot(aes(x = VISIT, y = fit, ymin=  lwr, ymax = upr, color = Diagnosis)) +
-  geom_point() +
-  geom_linerange() +
-  labs(title = "predictions of",
-       x="Participant", 
-       y="Prediction w/ 95% PI") + 
-  theme_bw()
-
-#plotting big 
 int_TR_big %>%
-  ggplot(aes(x=1:352, y=fit, ymin=lwr, ymax=upr)) +
-  geom_point() +
-  geom_linerange() +
-  labs(title = "",
-       x="Participant", 
-       y="Prediction w/ 95% PI") + 
-  theme_bw()
+  ggplot(aes(x = as.numeric(VISIT),
+             y = fit,
+             group = factor(SUBJ),
+             color = Diagnosis, 
+             fill = Diagnosis)) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  theme_bw() +
+  facet_wrap(~Diagnosis) +
+  labs(title = "Train",
+       subtitle = "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ)")
+
 ```
 
 
@@ -163,16 +167,52 @@ int_TR_big %>%
 test_2 <- test %>%
   na.omit()
 
-simple_rmse <- Metrics::rmse(test_2$CHI_MLU, predict(simple, newdata = test_2, allow.new.levels = T))
-big_rmse <- Metrics::rmse(test_2$CHI_MLU, predict(big_model_new, newdata = test_2, allow.new.levels = T))
 
-#deviding root mean sq error by sd of predicted variable, this is to standardize
-simple_rmse / sd(test_2$CHI_MLU)
-big_rmse / sd(test_2$CHI_MLU)  
+#rmse TEST
+rmse(test_2$CHI_MLU, predict(basic, newdata = test_2, allow.new.levels = T)) / 
+  sd(test_2$CHI_MLU)
 
-#predict intervals (pckg: merTools)
-interval_simple <- predictInterval(simple, test_2, level = .95)
-interval_big <- predictInterval(big_model_new, test_2, level = .95)
+rmse(test_2$CHI_MLU, predict(big_model_new, newdata = test_2, allow.new.levels = T)) /
+  sd(test_2$CHI_MLU)
+
+
+#interval TEST
+int_TE_simple <- predictInterval(basic, test_2, level = .95) %>%
+  cbind(test_2) %>%
+  rownames_to_column()
+
+int_TE_big <- predictInterval(big_model_new, test_2, level = .95) %>%
+  cbind(test_2) %>%
+  rownames_to_column()
+
+
+# plotting TE_simple
+int_TE_simple %>%
+  ggplot(aes(x = as.numeric(VISIT),
+             y = fit,
+             group = factor(SUBJ),
+             color = Diagnosis, 
+             fill = Diagnosis)) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  theme_bw() +
+  facet_wrap(~Diagnosis) +
+  labs(title = "Test",
+       subtitle = "CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)")
+
+
+# plotting TE_big
+int_TE_big %>%
+  ggplot(aes(x = as.numeric(VISIT),
+             y = fit,
+             group = factor(SUBJ),
+             color = Diagnosis, 
+             fill = Diagnosis)) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  theme_bw() +
+  facet_wrap(~Diagnosis) +
+  labs(title = "Test",
+       subtitle = "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ)")
 ```
 
 
@@ -186,6 +226,111 @@ In this exercise you have to use cross-validation to calculate the predictive er
 
 - Use cross-validation to compare your model from last week with the basic model (Child MLU as a function of Time and Diagnosis, and don't forget the random effects!)
 - (Tips): google the function "createFolds";  loop through each fold, train both models on the other folds and test them on the fold)
+
+
+## NEW CROSS VALIDATION
+This funciton is heavily inspired by Ludvig Renbo Olsen
+```{r}
+# original can be found at:
+# https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
+
+crossvalidate <- function(data, k, model_name, dependent, random = TRUE){
+  # data is the training set with the ".folds" column
+  # k is the number of folds we have
+  # model is a string describing a linear regression model formula
+  # dependent is a string with the name of the score column we want to predict
+  # random is a logical; do we have random effects in the model?
+  
+  # Initialize empty list for recording performances
+  performances <- c()
+  standard_performances <- c()
+  
+  # One iteration per fold
+  for (fold in 1:k){
+    
+    # Create training set for this iteration
+    # Subset all the datapoints where .folds does not match the current fold
+    training_set <- data[data$.folds != fold,]
+    
+    # Create test set for this iteration
+    # Subset all the datapoints where .folds matches the current fold
+    testing_set <- data[data$.folds == fold,]
+    
+    ## Train model
+    
+    # If there is a random effect,
+    # use lmer() to train model
+    # else use lm()
+    
+    if (isTRUE(random)){
+      
+      # Train linear mixed effects model on training set
+      model <-  lmer(model_name, training_set, REML=FALSE)
+      
+    } else {
+      
+      # Train linear model on training set
+      model <-  lm(model_name, training_set)
+      
+    }
+    
+    ## Test model
+    
+    # Predict the dependent variable in the testing_set with the trained model
+    predicted <- predict(model, testing_set, allow.new.levels=TRUE)
+    
+    # Get the Root Mean Square Error between the predicted and the observed
+    RMSE <- rmse(predicted, testing_set[[dependent]])
+    STD_RMSE <- RMSE / sd(testing_set[[dependent]])
+    
+    # Add the RMSE to the performance list
+    performances[fold] <- RMSE
+    standard_performances[fold] <- STD_RMSE
+    
+    
+  }
+  
+  # Return the mean of the recorded RMSEs
+  
+  return(cbind.data.frame('model' = model_name,
+                          'RMSE' = mean(performances),
+                          'standardized_RMSE' = mean(standard_performances)))
+  
+}
+```
+
+Merge data & create folds
+SUBJECTS 1 AND 5 DO NOT HAVE ALL THEIR OBSERVATIONS IN THE SAME FOLD
+```{r}
+set.seed(1337)
+all_dat <- full_join(test_2, train)
+# adds a new column with fold number
+all_dat_fold <- fold(all_dat, k = 5, 
+             cat_col = 'Diagnosis', #balances ratio between shizo/control
+             id_col = 'SUBJ') #keeps same people in same folds
+```
+
+Run crossvalidation
+```{r}
+basic_m <- "CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)"
+big_m <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ)"
+
+list_m <- list(basic_m, big_m)
+
+set.seed(1337)
+cross_table <- map_df(list_m,
+                      crossvalidate,
+                      data = all_dat_fold,
+                      k = 5,
+                      dependent = "CHI_MLU")
+
+
+rm(basic_m, big_m)
+```
+
+
+## OLD CROSS VALIDATION
+The loop approach.
 ```{r}
 #set random seed 
 set.seed(1337)
@@ -237,10 +382,12 @@ mean_rmse
 
 ```
 
+
 Which model is better at predicting new data: the one you selected last week or the one chosen via cross-validation this week?
 
 - Test both of them on the test data.  
 - Report the results and comment on them.
+### probably garbage
 ```{r}
 #this is surely wrong, but.. yeah.. 
 cross_simple <- Metrics::rmse(test_2$CHI_MLU, predict(SModel, newdata = test_2, allow.new.levels = T))
@@ -302,10 +449,21 @@ ggplot(standard_df, aes(VISIT, Var1))+
 ```
 
 
+## YEAH
 - Now try to find the best possible predictive model of ChildMLU, that is, the one that produces the best cross-validated results.
+### all combinations
+```{r}
+
+
+list_of_seven_tops <- list()
+```
+
+
+### run crossvalidation
 ```{r}
 
 ```
+
 
 - Bonus Question 1: What is the effect of changing the number of folds? Can you plot RMSE as a function of number of folds?
 - Bonus Question 2: compare the cross-validated predictive error against the actual predictive error on the test data
