@@ -14,9 +14,9 @@ p_load(tidyverse, lmerTest, merTools, Metrics, caret)
 select <- dplyr::select
 
 # TEST DATA PREPROCESSING
-demo_test_raw <- read.csv("demo_test.csv")
-lu_test_raw <- read.csv("LU_test.csv")
-token_test_raw <- read.csv("token_test.csv")
+demo_test_raw <- read.csv("A1_P1/demo_test.csv")
+lu_test_raw <- read.csv("A1_P1/LU_test.csv")
+token_test_raw <- read.csv("A1_P1/token_test.csv")
 
 demo <- demo_test_raw %>%
   rename(SUBJ = Child.ID, VISIT = Visit) %>% #last argument renamed to first argument. 
@@ -100,28 +100,71 @@ formatting tip: If you write code in this document and plan to hand it in, remem
 train <- read_csv("language_dev_asd_clean_2.csv")
 test <- read_csv("test_clean.csv")
 
+
 set.seed(1337)
-#simple
-simple <- lmer(CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = train, REML = FALSE)
-#big
-big_model_old <- lmer(CHI_MLU ~ (VISIT + I(VISIT^2)) * Diagnosis + verbalIQ_1 + 
-                    (1+VISIT + I(VISIT^2)|SUBJ), data = train, REML = FALSE)
+
+
+basic <- lmer(CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ), data = train, REML = FALSE)
 
 big_model_new <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
                     (1+VISIT +(VISIT^2)|SUBJ), data = train, REML = FALSE)
 ```
 
-```{r}
-#rmse from Metrics 
-rmse(train$CHI_MLU, predict(simple))
-rmse(train$CHI_MLU, predict(big_model))
 
-#comparing models
+## comparing basic and big models on TRAINING SET
+```{r}
+#rmse TRAIN
+rmse(train$CHI_MLU, predict(simple))
+rmse(train$CHI_MLU, predict(big_model_new))
+
+#interval TRAIN
+int_TR_simple <- predictInterval(simple, train, level = .95) %>%
+  cbind(train) %>%
+  rownames_to_column()
+
+int_TR_big <- predictInterval(big_model_new, train, level = .95) %>%
+  cbind(train) %>%
+  rownames_to_column()
+
+
+# plotting TR_simple
+int_TR_big %>%
+  ggplot(aes(x = VISIT, y = fit, ymin = lwr, ymax = upr, color = Diagnosis)) +
+  geom_point() +
+  geom_linerange(position = "jitter")
+
+# plotting TR_big
+
+
+#plotting simple 
+int_TR_simple %>%
+  ggplot(aes(x = VISIT, y = fit, ymin=  lwr, ymax = upr, color = Diagnosis)) +
+  geom_point() +
+  geom_linerange() +
+  labs(title = "predictions of",
+       x="Participant", 
+       y="Prediction w/ 95% PI") + 
+  theme_bw()
+
+#plotting big 
+int_TR_big %>%
+  ggplot(aes(x=1:352, y=fit, ymin=lwr, ymax=upr)) +
+  geom_point() +
+  geom_linerange() +
+  labs(title = "",
+       x="Participant", 
+       y="Prediction w/ 95% PI") + 
+  theme_bw()
+```
+
+
+## comapring basic and big models on TEST SET
+```{r}
 test_2 <- test %>%
   na.omit()
 
 simple_rmse <- Metrics::rmse(test_2$CHI_MLU, predict(simple, newdata = test_2, allow.new.levels = T))
-big_rmse <- Metrics::rmse(test_2$CHI_MLU, predict(big_model, newdata = test_2, allow.new.levels = T))
+big_rmse <- Metrics::rmse(test_2$CHI_MLU, predict(big_model_new, newdata = test_2, allow.new.levels = T))
 
 #deviding root mean sq error by sd of predicted variable, this is to standardize
 simple_rmse / sd(test_2$CHI_MLU)
@@ -129,20 +172,11 @@ big_rmse / sd(test_2$CHI_MLU)
 
 #predict intervals (pckg: merTools)
 interval_simple <- predictInterval(simple, test_2, level = .95)
-interval_big <- predictInterval(big_model, test_2, level = .95)
-
-#plotting simple 
-ggplot(aes(x=1:35, y=fit, ymin=lwr, ymax=upr), data=interval_simple[1:35,]) +
-  geom_point() +
-  geom_linerange() +
-  labs(x="Index", y="Prediction w/ 95% PI") + theme_bw()
-
-#plotting big 
-ggplot(aes(x=1:35, y=fit, ymin=lwr, ymax=upr), data=interval_big[1:35,]) +
-  geom_point() +
-  geom_linerange() +
-  labs(x="Index", y="Prediction w/ 95% PI") + theme_bw()
+interval_big <- predictInterval(big_model_new, test_2, level = .95)
 ```
+
+
+
 
 ### Exercise 2) Model Selection via Cross-validation (N.B: ChildMLU!)
 
