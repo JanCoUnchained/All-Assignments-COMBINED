@@ -453,15 +453,44 @@ ggplot(standard_df, aes(VISIT, Var1))+
 - Now try to find the best possible predictive model of ChildMLU, that is, the one that produces the best cross-validated results.
 ### all combinations
 ```{r}
+m1 <- "CHI_MLU ~ VISIT + (1+VISIT|SUBJ)"
+m2 <- "CHI_MLU ~ Diagnosis + (1+VISIT|SUBJ)"
+m3 <- "CHI_MLU ~ VISIT + Diagnosis + (1+VISIT|SUBJ)"
+m4 <- "CHI_MLU ~ VISIT*Diagnosis + (1+VISIT|SUBJ)"
+m5 <- "CHI_MLU ~ (VISIT + I(VISIT^2))*Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)"
+m6 <- "CHI_MLU ~ (VISIT+ I(VISIT^2)+ I(VISIT^3))*Diagnosis + (1+VISIT + I(VISIT^2) + I(VISIT^3)|SUBJ)"
 
+# ethnicity seems to cause problems
+m7 <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + ADOS_1 + nonVerbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ)"
 
-list_of_seven_tops <- list()
+m7e <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ)"
+  
+m8 <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ)"
+
+# # ethnicity seems to cause problems 2
+m9 <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + ADOS_1 + nonVerbalIQ_1 + types_MOT + tokens_MOT + (1+VISIT +(VISIT^2)|SUBJ)"
+
+m9e <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + types_MOT + tokens_MOT + (1+VISIT +(VISIT^2)|SUBJ)"
+
+m10 <- "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 + tokens_MOT + (1+VISIT +(VISIT^2)|SUBJ)"
+
+list_of_ten_tops <- list(m1, m2, m3, m4, m5, m6, m7, m8, m9, m10)
+
+rm(m1, m2, m3, m4, m5, m6, m7, m7e, m8, m9, m9e, m10)
 ```
 
 
 ### run crossvalidation
 ```{r}
+all_dat_fold_fix <- all_dat_fold %>%
+  mutate(Ethnicity = str_remove_all(Ethnicity, "/"))
 
+set.seed(1337)
+cross_best_possible <- map_df(list_of_ten_tops,
+                      crossvalidate,
+                      data = all_dat_fold_fix,
+                      k = 5,
+                      dependent = "CHI_MLU")
 ```
 
 
