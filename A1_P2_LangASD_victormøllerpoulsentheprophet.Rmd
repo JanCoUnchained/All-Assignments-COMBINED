@@ -35,7 +35,7 @@ Load necessary libraries : what will you need?
 ```{r Load Libraries, include = FALSE}
 
 library(pacman)
-p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest) 
+p_load(tidyverse, lme4, corrplot, RColorBrewer, lmerTest, ggthemes, ggExtra) 
 
 ```
 
@@ -264,14 +264,15 @@ good <- ggplot(data, aes(as.numeric(VISIT), CHI_MLU)) +
   theme_bw() +
   scale_fill_tableau() +
   scale_color_tableau() +
-  scale_x_continuous(breaks=seq(1,6,1)) +
+  scale_x_continuous(breaks= c(1:6)) +
+  removeGridX() +
   labs(title = "Development of Child's MLU",
-       #subtitle = "", 
+       subtitle = "Dots are based on predictions & around the lines are prediction intervals\nThe thicker the violin the higher the density in that part of the distribution", 
+       caption = "(A JanCo production..)",
        x = "Visit number", 
        y = "Child's MLU")
 
-good
-
+good 
 
 p_load(cowplot)
 plot_grid(plot1, plot2, plot3, labels = "AUTO")
