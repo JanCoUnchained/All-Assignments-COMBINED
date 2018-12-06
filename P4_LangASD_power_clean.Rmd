@@ -13,8 +13,8 @@ library(pacman)
 p_load(lmerTest, tidyverse, simr, stats)
 
 #load the train data
-test <- read_csv("test_clean.csv")
-train <- read_csv("language_dev_asd_clean_2.csv")
+test <- read_csv("data/power/test_clean.csv")
+train <- read_csv("data/power/language_dev_asd_clean_2.csv")
 ```
 
 ## Welcome to the fourth exciting part of the Language Development in ASD exercise
