@@ -10,9 +10,10 @@ knitr::opts_chunk$set(echo = TRUE)
 #load libraries
 library(pacman)
 p_load(tidyverse, 
+       knitr, #kable
        lmerTest, merTools, Metrics, caret, #modeling
        groupdata2, #folds
-       ggthemes, RColorBrewer) #plotting
+       ggthemes, RColorBrewer, gridExtra) #plotting
 
 #due to troubles with select-function, we make sure that R always uses the select-function from dplyr
 select <- dplyr::select
@@ -132,7 +133,7 @@ int_TR_big <- predictInterval(big_model_new, train, level = .95) %>%
 
 
 # plotting TR_simple
-int_TR_simple %>%
+pl_TR_simple <- int_TR_simple %>%
   ggplot(aes(x = as.numeric(VISIT),
              y = fit,
              group = factor(SUBJ),
@@ -140,13 +141,17 @@ int_TR_simple %>%
              fill = Diagnosis)) +
   geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
   theme_bw() +
+  scale_x_continuous(breaks= c(1:6)) +
+  scale_y_continuous(breaks = seq(-4, 8, 2), limits = c(-4, 8)) +
+  guides(fill = FALSE) +
   facet_wrap(~Diagnosis) +
-  labs(title = "Train",
-       subtitle = "CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)")
+  labs(title = "Simple model",
+       y = "fitted value",
+       x = "visit number")
 
 
 # plotting TR_big
-int_TR_big %>%
+pl_TR_big <- int_TR_big %>%
   ggplot(aes(x = as.numeric(VISIT),
              y = fit,
              group = factor(SUBJ),
@@ -154,18 +159,25 @@ int_TR_big %>%
              fill = Diagnosis)) +
   geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
   theme_bw() +
+  scale_x_continuous(breaks = c(1:6)) +
+  scale_y_continuous(breaks = seq(-4, 8, 2), limits = c(-4, 8)) +
+  guides(fill = FALSE) +
   facet_wrap(~Diagnosis) +
-  labs(title = "Train",
-       subtitle = "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
-                    (1+VISIT +(VISIT^2)|SUBJ)")
+  labs(title = "Complex model",
+       y = "fitted value",
+       x = "visit number")
 
+grid.arrange(pl_TR_simple, pl_TR_big, ncol=2, 
+             top = "Confidence intervals (95%) of fitted values",
+             bottom = "Tested on training set")
 ```
 
 
 ## comapring basic and big models on TEST SET
 ```{r}
 test_2 <- test %>%
-  na.omit()
+  na.omit() %>%
+  mutate(SUBJ = as.numeric(SUBJ) + 100)
 
 
 #rmse TEST
@@ -186,33 +198,44 @@ int_TE_big <- predictInterval(big_model_new, test_2, level = .95) %>%
   rownames_to_column()
 
 
-# plotting TE_simple
-int_TE_simple %>%
+#plotting TE_simple
+pl_TE_simple <- int_TE_simple %>%
   ggplot(aes(x = as.numeric(VISIT),
              y = fit,
              group = factor(SUBJ),
              color = Diagnosis, 
              fill = Diagnosis)) +
-  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.5) +
   theme_bw() +
+  scale_x_continuous(breaks= c(1:6)) +
+  scale_y_continuous(breaks = seq(-4, 8, 2), limits = c(-4, 8)) +
+  guides(fill = FALSE) +
   facet_wrap(~Diagnosis) +
-  labs(title = "Test",
-       subtitle = "CHI_MLU ~ VISIT * Diagnosis + (1+VISIT + I(VISIT^2)|SUBJ)")
+  labs(title = "Simple model",
+       y = "fitted value",
+       x = "visit number")
 
 
 # plotting TE_big
-int_TE_big %>%
+pl_TE_big <- int_TE_big %>%
   ggplot(aes(x = as.numeric(VISIT),
              y = fit,
              group = factor(SUBJ),
              color = Diagnosis, 
              fill = Diagnosis)) +
-  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.1) +
+  geom_ribbon(aes(ymax = upr, ymin = lwr, color = NULL), alpha = 0.5) +
   theme_bw() +
+  scale_x_continuous(breaks = c(1:6)) +
+  scale_y_continuous(breaks = seq(-4, 8, 2), limits = c(-4, 8)) +
+  guides(fill = FALSE) +
   facet_wrap(~Diagnosis) +
-  labs(title = "Test",
-       subtitle = "CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
-                    (1+VISIT +(VISIT^2)|SUBJ)")
+  labs(title = "Complex model",
+       y = "fitted value",
+       x = "visit number")
+
+grid.arrange(pl_TE_simple, pl_TE_big, ncol=2, 
+             top = "Confidence intervals (95%) of fitted values",
+             bottom = "Tested on testing set")
 ```
 
 
@@ -497,65 +520,81 @@ cross_best_possible <- map_df(list_of_ten_tops,
 - Bonus Question 1: What is the effect of changing the number of folds? Can you plot RMSE as a function of number of folds?
 - Bonus Question 2: compare the cross-validated predictive error against the actual predictive error on the test data
 
+
 ### Exercise 3) Assessing the single child
 
 Let's get to business. This new kiddo - Bernie - has entered your clinic. This child has to be assessed according to his group's average and his expected development.
 
 Bernie is one of the six kids in the test dataset, so make sure to extract that child alone for the following analysis.
 
-```{r}
-#create data frame containing only Bernie
-BernieData <- filter(test, SUBJ=="2")  
-BernieData
-```
-
 You want to evaluate:
 
 - how does the child fare in ChildMLU compared to the average TD child at each visit? Define the distance in terms of absolute difference between this Child and the average TD.
+
+## splitting
 ```{r}
-# predictions: Bernie
-bernie_visit <- test %>%
-  filter(SUBJ=="2") %>%
-  mutate(subject = "Bernie",
-         pred_MLU = predict(big_model_new, newdata = ., allow.new.levels = T))
+#create data frame containing only Bernie
+BernieData <- filter(test_2, SUBJ=="102") 
 
-# test + train, excluding Bernie
 data <- rbind(train, test) %>%
-  anti_join(bernie_visit)
-
-# predictions: ASD subjects, excluding Bernie
-ASDs <- data %>%
-  filter(Diagnosis == "ASD") %>%
-  mutate(subject = "ASD",
-         pred_MLU = predict(big_model_new, newdata = ., allow.new.levels = T))
-
-# predictions: TD subjects, appending ASDs and Bernie
-bernie_assess <- data %>%
-  filter(Diagnosis == "TD") %>%
-  mutate(subject = "TD",
-         pred_MLU = predict(big_model_new, newdata = ., allow.new.levels = T)) %>%
-  rbind(bernie_visit) %>%
-  rbind(ASDs)
-
-# plot
-ggplot(bernie_assess, aes(VISIT, pred_MLU, color = subject)) +
-  geom_smooth() +
-  scale_x_continuous(breaks=seq(1,6,1)) +
-  theme_bw() +
-  labs(title = "Bernie is on top of the game", 
-       subtitle = "Comparing lines of best fit",
-       y = "Predicted child MLU")
-
-
-# LEAVE IT THERE JUST TO BE SURE
-#create table containing VISIT and MLU from Bernie and the TD children respectively
-#table <- cbind(bernie_visit[1:2], average_visit[2])
-#names(table)[2] <- "BERN_MLU"
-#names(table)[3] <- "TD_MLU"
-
-#calculate the absolute difference in MLU between Bernie and the TD children for each visit
-#table$difference <- abs(table$BERN_MLU - table$TD_MLU)
+  anti_join(BernieData)
 ```
+
+
+## compring real Bernie and real TD
+```{r}
+# plotting model predictions
+TD = filter(data, Diagnosis == "TD")
+
+# FAKE
+expand.grid(VISIT = 1:6, Diagnosis = factor("TD"),
+            ADOS_1 = mean(TD$ADOS_1),
+            MOT_MLU = mean(TD$MOT_MLU),
+            verbalIQ_1 = mean(TD$verbalIQ_1),
+            SUBJ = "Riccardo") %>%
+  # PREDITCT
+  cbind(predictInterval(big_model_new, newdata = .)) %>%
+  mutate(CHI_MLU = predict(big_model_new, newdata = ., allow.new.levels = TRUE)) %>%
+  # PLOT
+  ggplot(aes(VISIT, CHI_MLU)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "lightblue", alpha = 0.3) +
+    geom_line(aes(color = "Model average (TD)"), size = 1) +
+    geom_point(aes(color = "Bernie"), data = BernieData, shape = 15, size = 2) +
+    theme_bw() +
+    scale_x_continuous(breaks=seq(1,6,1)) +
+    labs(title = "",
+       subtitle = "",
+       x = "Visit number",
+       y = "Child's Mean Length of Utterance")
+  
+```
+
+
+## comparing predicted Bernie visit 6 and real Bernie visit 6
+```{r}
+B_all <- all_dat %>%
+  filter(!(SUBJ == "102" & VISIT == "6"))
+
+B_6 <- all_dat %>%
+  filter(SUBJ == "102" & VISIT == "6")
+
+model_bernie <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + 
+                       verbalIQ_1 + (1+VISIT +(VISIT^2)|SUBJ), data = B_all)
+
+
+
+
+```
+
+plotto
+```{r}
+B_6 %>%
+  cbind(predictInterval(model_bernie, B_6)) %>%
+  select(observed = CHI_MLU, "fitted value" = fit, lwr, upr) %>%
+  kable(caption = "Bernie's 6th visit: comparing observed and predicted values")
+```
+
+
 
 (Tip: recreate the equation of the model: Y=Intercept+BetaX1+BetaX2, etc; input the average of the TD group  for each parameter in the model as X1, X2, etc.).
 
