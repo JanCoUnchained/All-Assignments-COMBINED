@@ -547,27 +547,43 @@ data <- rbind(train, test) %>%
 TD = filter(data, Diagnosis == "TD")
 
 # FAKE
-expand.grid(VISIT = 1:6, Diagnosis = factor("TD"),
+tyty <- expand.grid(VISIT = 1:6, Diagnosis = factor("TD"),
             ADOS_1 = mean(TD$ADOS_1),
             MOT_MLU = mean(TD$MOT_MLU),
             verbalIQ_1 = mean(TD$verbalIQ_1),
-            SUBJ = "Riccardo") %>%
+            SUBJ = 1337) %>%
   # PREDITCT
   cbind(predictInterval(big_model_new, newdata = .)) %>%
-  mutate(CHI_MLU = predict(big_model_new, newdata = ., allow.new.levels = TRUE)) %>%
-  # PLOT
+  mutate(CHI_MLU = predict(big_model_new, newdata = ., allow.new.levels = TRUE))
+
+tyty %>%
   ggplot(aes(VISIT, CHI_MLU)) +
     geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "lightblue", alpha = 0.3) +
     geom_line(aes(color = "Model average (TD)"), size = 1) +
-    geom_point(aes(color = "Bernie"), data = BernieData, shape = 15, size = 2) +
+    geom_point(aes(color = "Bernie"), 
+               data = BernieData, shape = 15, size = 2) +
     theme_bw() +
     scale_x_continuous(breaks=seq(1,6,1)) +
-    labs(title = "",
-       subtitle = "",
+    labs(title = "Comparison of observed and fitted values",
+       subtitle = "Bernie: Observed values of Bernie \nModel average (TD): Predicted development of the average TD participant (with 95% confidence intervals)",
        x = "Visit number",
        y = "Child's Mean Length of Utterance")
   
+
 ```
+
+absolute differences
+```{r}
+tyty_B <- tyty %>%
+  full_join(BernieData) %>%
+  mutate(SUBJ = ifelse(SUBJ == "102", "Bernie", "Average TD")) %>%
+  select(VISIT, SUBJ, CHI_MLU) %>%
+  mutate(CHI_MLU = round(CHI_MLU, 3)) %>%
+  spread(SUBJ, CHI_MLU) %>%
+  mutate("absolute difference" = .[["Bernie"]] - .[["Average TD"]]) %>%
+  kable()
+```
+
 
 
 ## comparing predicted Bernie visit 6 and real Bernie visit 6
