@@ -1,0 +1,275 @@
+---
+title: "Assignment 1 - Language Development in ASD - part 4"
+author: "JanCo. Unchained"
+date: "October 10, 2018"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(include = FALSE)
+
+#load libraries
+library(pacman)
+p_load(lmerTest, tidyverse, simr, stats)
+
+#load the train data
+test <- read_csv("test_clean.csv")
+train <- read_csv("language_dev_asd_clean_2.csv")
+```
+
+## Welcome to the fourth exciting part of the Language Development in ASD exercise
+
+In this exercise we will assess how many participants we would need to adequately replicate our findings (ensuring our sample size is adequate, our alpha at 0.05 and our beta at 0.8).
+
+### Exercise 1
+
+How much power does your study have (if your model estimates are quite right)?
+- [GitHub]Load your dataset, fit your favorite model, assess power for your main effects and interactions of interest.
+- Report the power analysis and comment on what you can (or cannot) use its estimates for.
+
+### Combining the datasets (train & test) ###
+
+```{r}
+
+#Making SUBJ compatible
+test$SUBJ <- as.numeric(as.factor(test$SUBJ))
+train$SUBJ <- as.numeric(as.factor(train$SUBJ)) + 6
+
+#removing NA (perhaps we could have inserted mean..) & combining 
+test <- test[-2,]
+combined <- rbind(test, train)
+
+#factorizing 
+combined$Diagnosis <- as.factor(combined$Diagnosis)
+
+```
+
+
+### Fitting Favorite Model & Running powerSim() ###
+
+```{r}
+
+#create model
+model <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ), data = combined, REML = FALSE)
+
+#set seed as ensure replicability 
+set.seed(911)
+
+#calculate the power by running through 100 simulations
+inter_diag_visit <- powerSim(model, simr::fixed("DiagnosisTD:VISIT", method = "t"), nsim = 100)
+
+#display the parameters of the power analysis
+inter_diag_visit #100% CI (96.38-100) - beta = 0.48
+```
+
+### Exercise 2
+
+How would you perform a more conservative power analysis?
+- Identify and justify a minimum effect size for each of your relevant effects
+- [GitHub] take the model from exercise 1 and replace the effects with the minimum effect size that you'd accept.
+- [GitHub] assess the power curve by Child.ID, identifying an ideal number of participants to estimate each effect
+- [GitHub] if your power estimates do not reach an acceptable threshold simulate additional participants and repeat the previous analysis
+- Report the power analysis and comment on what you can (or cannot) use its estimates for.
+```{r}
+#set a fixed estimate for the interaction effect
+fixef(model)["DiagnosisTD:VISIT"] <- 0.25 #the smallest effect of interest
+
+#set seed 
+set.seed(911)
+
+#do a power simulation
+powerCurveV = powerCurve(model,
+simr::fixed("DiagnosisTD:VISIT", method = "t"), along="SUBJ",nsim = 100)
+
+#display the result of the power analysis
+powerCurveV 
+
+#plot the power curve
+plot(powerCurveV)
+```
+
+#### Simulate verbalIQ_1
+ 
+We tried to simulate new data. 
+In order to do that we created a model to simulate verbalIQ_1. 
+We are using a linear model (without random effects) because we cannot solve the convergence errors. 
+ 
+```{r}
+#set seed 
+set.seed(911)
+
+#make a model that can be used to simulate verbalIQ 
+verbal_model <- lm(verbalIQ_1 ~ Diagnosis + nonVerbalIQ_1 + CHI_MLU, data = combined)
+summary(verbal_model)
+
+#making new fd 
+combined2 <- combined
+combined2$verbalIQ_1 <- NA
+
+#simulating
+combined2$verbalIQ_1 <- simulate(verbal_model, seed=1, newdata=combined2, re.form=NA,
+                        allow.new.levels=T)$sim_1
+
+summary(combined$verbalIQ_1)
+summary(combined2$verbalIQ_1)
+
+t.test(combined$verbalIQ_1, combined2$verbalIQ_1)
+
+sd(combined$verbalIQ_1)
+sd(combined2$verbalIQ_1) #quite a bit lower sd. 
+
+p_load(cowplot)
+p1 <- ggplot(combined2, aes(VISIT, verbalIQ_1, color = Diagnosis))+
+  geom_point()+
+  geom_smooth()+
+  labs(x = "visit number", y = "verbal IQ", title = "simulated data")
+p2 <- ggplot(combined, aes(VISIT, verbalIQ_1, color = Diagnosis))+
+  geom_point()+
+  geom_smooth()+
+  labs(x = "visit number", y = "verbal IQ", title = "original data")
+  
+p3 <- plot_grid(p1, p2) 
+
+title <- ggdraw() + draw_label("Verbal IQ by visit for simulated and real data", fontface='bold')
+
+p4 <- plot_grid(title, p3, ncol=1, rel_heights=c(0.1, 1)) 
+p4
+
+```
+
+ 
+```{r}
+#set seed
+set.seed(911)
+
+#reload the model
+model <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ) , data = combined, REML = FALSE)
+
+#display the model
+model
+
+#replicate the training set and delete the values for the MLU of the children
+combined2$CHI_MLU <- NA
+
+#simulate new values of child MLU 
+combined2$CHI_MLU <- simulate(model, seed=1, newdata=combined2, re.form=NA,
+                        allow.new.levels=T)$sim_1
+
+#get descriptive stats of child MLU in the two data sets
+summary(combined$CHI_MLU)
+summary(combined2$CHI_MLU) #negative MLU is questionable.
+
+#inserting 0 
+combined2$CHI_MLU[combined2$CHI_MLU < 0] <- 0
+summary(combined2$CHI_MLU) #now no negative values. 
+
+#conduct a t-test between the child MLU in the training set and the simulated set respectively
+t.test(combined$CHI_MLU, combined2$CHI_MLU) #close enough? 
+
+#calculate standard deviation for child MLU in the two data sets
+sd(combined$CHI_MLU)
+sd(combined2$CHI_MLU)
+
+#plot child MLU as a function of nr. visit for both data sets
+p1 <- ggplot(combined2, aes(VISIT, CHI_MLU, color = Diagnosis))+
+  geom_point()+
+  geom_smooth()+
+  labs(x = "visit number", y = "child MLU", title = "simulated data")
+p2 <- ggplot(combined, aes(VISIT, CHI_MLU, color = Diagnosis))+
+  geom_point()+
+  geom_smooth()+
+  labs(x = "visit number", y = "child MLU", title = "original data")
+  
+p3 <- plot_grid(p1, p2) 
+
+title <- ggdraw() + draw_label("Child MLU by visit for simulated and real data", fontface='bold')
+
+p4 <- plot_grid(title, p3, ncol=1, rel_heights=c(0.1, 1)) 
+p4
+
+#combine the training set and the simulated set into one 
+combined2$SUBJ <- combined2$SUBJ + 67 #to make it comp. with combined. 
+combined3 <- rbind(combined, combined2)
+summary(combined3$SUBJ) #works. 
+
+#calculate the standard deviation for the combined set
+sd(combined3$CHI_MLU) #pretty close to original 
+
+#recreate the model for the combined set
+data_model <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ), data = combined3, REML = FALSE)
+
+#set the same fixed estimate for the interaction effect as before
+fixef(data_model)["DiagnosisTD:VISIT"] <- 0.25  
+
+#do a power simulation
+powerCurveNew = powerCurve(data_model,
+simr::fixed("DiagnosisTD:VISIT", method = "t"), along="SUBJ", nsim = 100) 
+
+#display the result of the power analysis
+powerCurveNew #84% power at 134 participants. 
+
+#plot the power curve
+plot(powerCurveNew) #
+beta = (134 - 119) / (84 - 72)
+intercept = 134 - beta * 84
+intercept + beta * 80 #estimated 80% power at 129 participants. 
+
+```
+
+### Exercise 3
+
+Assume you have only the resources to collect 30 kids (15 with ASD and 15 TDs). Identify the power for each relevant effect and discuss whether it's worth to run the study and why
+
+```{r}
+#set seed
+set.seed(112)
+
+#make a df consisting only of the ASD kids 
+ASD_kid <- combined %>%
+  filter(Diagnosis == "ASD")
+
+#create a df with 15 random ASD kids
+set.seed(911)
+fifteen_asd <- sample(unique(ASD_kid$SUBJ), 15)
+
+#turn df into a vector
+fifteen_asd <- as.vector(fifteen_asd)
+
+#make a df consisting only of the TD kids 
+TD_kid <- combined %>%
+  filter(Diagnosis == "TD")
+
+#create a df with 15 random TD kids
+set.seed(911)
+fifteen_td <- sample(unique(TD_kid$SUBJ), 15)
+
+#turn df into a vector
+fifteen_td <- as.vector(fifteen_td)
+
+#combine the vectors
+fifteen_each <- c(fifteen_asd, fifteen_td)
+
+#select the observations from the df
+combined_subset <- combined %>%
+  subset(SUBJ %in% fifteen_each)
+
+#rerun the analysis
+subset_model <- lmer(CHI_MLU ~ Diagnosis * VISIT + Diagnosis * I(VISIT^2) + verbalIQ_1 +
+                    (1+VISIT +(VISIT^2)|SUBJ), data = combined_subset, REML = FALSE)
+
+#display the model
+subset_model
+
+#set seed
+set.seed(911)
+
+#run power analysis
+subset_effect <- powerSim(subset_model, simr::fixed("DiagnosisTD:VISIT", method = "t"), nsim = 100)
+
+#display the power analysis
+subset_effect 
+
+```
