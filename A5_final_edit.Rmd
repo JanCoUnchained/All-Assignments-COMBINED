@@ -63,6 +63,8 @@ colnames(PitchRangeSD)[23] <- "viSD"
 
 meta <- dplyr::full_join(PitchRange, PitchRangeSD)
 
+#writing csv
+write.csv(meta, "meta.csv", row.names = FALSE)
 ```
 
 partialing up into two datasets, one containing all the studies with data on pitch mean and one containing all the studies with data on pitch sd. Only a subset of variables are chosen. 
@@ -85,11 +87,13 @@ Model for Mean
 
 ```{r}
 library(metafor)
+
+#Does not matter whether we use StudyID or ArticleID because they are "unique" & same. However, it doesn't seem like it makes a difference (even to the last decimal point). Of course, it shouldn't here in mean (where it is actually the same). It should make a difference in SD however where it still doesn't. 
 a1_m1_mean <- lmer(yi ~ 1 + (1|StudyID), weights = 1/vi, data=a1_mean,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a1_m2_mean <- rma(yi, vi, data = a1_mean, slab=Article)
+a1_m2_mean <- rma(yi, vi, data = a1_mean, slab=StudyID)
 forest(a1_m2_mean)
 a1_m2_mean
 
@@ -105,7 +109,7 @@ a1_m1_SD <- lmer(yiSD ~ 1 + (1|StudyID), weights = 1/viSD, data=a1_sd,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a1_m2_SD <- rma(yiSD, viSD, data = a1_sd, slab=Article)
+a1_m2_SD <- rma(yiSD, viSD, data = a1_sd, slab=StudyID)
 forest(a1_m2_SD)
 a1_m2_SD
 
@@ -187,7 +191,7 @@ a2_m1_mean <- lmer(yi ~ 1 + (1|StudyID), weights = 1/vi, data=a2_mean,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a2_m2_mean <- rma(yi, vi, data = a2_mean, slab=Article)
+a2_m2_mean <- rma(yi, vi, data = a2_mean, slab=StudyID)
 forest(a2_m2_mean)
 
 ```
@@ -201,8 +205,9 @@ a2_m1_SD <- lmer(yiSD ~ 1 + (1|StudyID), weights = 1/viSD, data=a2_sd,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a2_m2_SD <- rma(yiSD, viSD, data = a2_sd, slab=Article)
+a2_m2_SD <- rma(yiSD, viSD, data = a2_sd, slab=StudyID)
 forest(a2_m2_SD)
+a2_m2_SD
 
 ```
 
@@ -255,81 +260,58 @@ Difference")
 #### TASK 3 ####
 Loading data from assignment 3 & obtaining the data we need to include the three studies from that assignment. 
 
+Getting the raw data. A previous approach saw us use a random effect model in which the random effect was study & the fixed effect was diagnosis. We now group by study, so as to not pool their estimates here (this would give better estimates, but would reduce the heterogeneity in the meta-analysis.)
+
 ```{r}
-#loading the data from assignment 3 
+#Loading schizo data 
 schizo_data <- read.csv("data/A5/schizo_data.csv")
 schizo_data <- schizo_data[,-1]
 schizo_data$study <- as.factor(schizo_data$study)
 schizo_data$diagnosis <- as.factor(schizo_data$diagnosis)
 
-#making models - using all three studies.
-model1 <- lmer(mean ~ diagnosis + (1|study), data = schizo_data)
-summary(model1) #bigger mean - significant
+#Filtering data & combining 
+e_mean = group_by(schizo_data, study, diagnosis) %>%
+  summarise(mean_mean = mean(mean),
+            sd_mean = sd(mean),
+            n = length(unique(ID)))
 
-model2 <- lmer(sd ~ diagnosis + (1|study), data = schizo_data)
-summary(model2) #not significant
+e_sd = group_by(schizo_data, study, diagnosis) %>%
+  summarise(mean_sd = mean(sd),
+            sd_sd = sd(sd),
+            n = length(unique(ID)))
 
-#maing a new dataframe 
-diagnosis <- as.factor(c(0, 0, 0, 1, 1, 1))
-study <- as.factor(c(1, 2, 4, 1, 2, 4))
-newdata <- data.frame(diagnosis, study)
+e_mean_sd <- dplyr::full_join(e_mean, e_sd)
 
-#predictions 
-set.seed(1000)
-newdata$SD <- predict(model2, newdata, allow.new.levels=T)
-newdata$MEAN <- predict(model1, newdata, allow.new.levels=T)
-
-#per participant 
-sd_sd <- schizo_data %>%
-  group_by(study, diagnosis) %>%
-  summarise(sd_sd = sd(sd)) 
-
-mean_sd <- schizo_data %>%
-  group_by(study, diagnosis) %>%
-  summarise(sd_mean = sd(mean))
-
-#combining dataframes
-combined_baby <- inner_join(newdata, sd_sd, by = c("diagnosis", "study"))
-combined_baby <- inner_join(combined_baby, mean_sd, by = c("diagnosis", "study"))
-
-#Adding N from diff studies 
-library(tidyverse)
-great <- schizo_data %>%
-  group_by(study, diagnosis) %>%
-  summarize(n = n())
-
-#with number
-withnumber <- inner_join(combined_baby, great, by = c("study", "diagnosis"))
-
-#three different studies - partialing it up. 
-SCHIZO <- withnumber %>%
+#consistent format and naming scheme with other stuides in meta-analysis
+schizophrenics <- e_mean_sd %>%
   filter(diagnosis == 1) %>%
-  rename("SAMPLE_SIZE_SZ" = "n", "PITCH_F0SD_SZ_M" = "SD", "PITCH_F0_SZ_M" = "MEAN", "PITCH_F0_SZ_SD" = "sd_mean", "PITCH_F0SD_SZ_SD" = "sd_sd") %>%
+  rename("SAMPLE_SIZE_SZ" = "n", "PITCH_F0SD_SZ_M" = "mean_sd", "PITCH_F0_SZ_M" = "mean_mean", "PITCH_F0_SZ_SD" = "sd_mean", "PITCH_F0SD_SZ_SD" = "sd_sd") %>%
+  ungroup() %>%
   select(-diagnosis)
 
-TD <- withnumber %>% 
+healthyctrls <- e_mean_sd %>% 
   filter(diagnosis == 0) %>%
-  rename("SAMPLE_SIZE_HC" = "n", "PITCH_F0SD_HC_M" = "SD", "PITCH_F0_HC_M" = "MEAN", "PITCH_F0_HC_SD" = "sd_mean", "PITCH_F0SD_HC_SD" = "sd_sd") %>%
+  rename("SAMPLE_SIZE_HC" = "n", "PITCH_F0SD_HC_M" = "mean_sd", "PITCH_F0_HC_M" = "mean_mean", "PITCH_F0_HC_SD" = "sd_mean", "PITCH_F0SD_HC_SD" = "sd_sd") %>%
+  ungroup() %>%
   select(-diagnosis)
 
-combined <- inner_join(TD, SCHIZO, by = "study")
+together <- inner_join(schizophrenics, healthyctrls, by = "study")
 
-#making the three dataframes that we need. 
-library(metafor)
+#escalc on mean & sd. 
 PitchRange=escalc('SMD', n1i=SAMPLE_SIZE_SZ, n2i=SAMPLE_SIZE_HC, m1i=PITCH_F0_SZ_M,
 m2i=PITCH_F0_HC_M, sd1i=PITCH_F0_SZ_SD, sd2i=PITCH_F0_HC_SD,
-data = combined)
+data = together)
+
 
 PitchRangeSD=escalc('SMD', n1i=SAMPLE_SIZE_SZ, n2i=SAMPLE_SIZE_HC, m1i=PITCH_F0SD_SZ_M,
 m2i=PITCH_F0SD_HC_M, sd1i=PITCH_F0SD_SZ_SD, sd2i=PITCH_F0SD_HC_SD,
-data = combined)
+data = together)
 
-PitchRange <- filter(PitchRange, complete.cases(PitchRange$yi))
-PitchRangeSD <- filter(PitchRangeSD, complete.cases(PitchRangeSD$yi))
-
+#colnames
 colnames(PitchRangeSD)[12] <- "yiSD"
 colnames(PitchRangeSD)[13] <- "viSD"
 
+#dataframe ready for metaanalysis 
 combined <- dplyr::full_join(PitchRange, PitchRangeSD)
 
 ```
@@ -340,7 +322,7 @@ combined <- dplyr::full_join(PitchRange, PitchRangeSD)
 #STUDY ID, SAMPLE_SIZE_SZ, SAMPLE_SIZE_HC, 
 our_data <- combined
 our_data <- our_data %>%
-  mutate(StudyID = c(49,50,51)) %>%
+  mutate(StudyID = c(49,49,49)) %>% #same StudyID crucially. 
   mutate(Article = c("JanCo et al. (3000)", "JanCo more al. (3000)", "JanCo most al. (3000)"))
 
 #crazy try
@@ -385,7 +367,7 @@ a3_m1_mean <- lmer(yi ~ 1 + (1|StudyID), weights = 1/vi, data=a3_mean,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a3_m2_mean <- rma(yi, vi, data = a3_mean, slab=Article)
+a3_m2_mean <- rma(yi, vi, data = a3_mean, slab=StudyID)
 forest(a3_m2_mean)
 a3_m2_mean
 
@@ -399,7 +381,7 @@ a3_m1_sd <- lmer(yiSD ~ 1 + (1|StudyID), weights = 1/viSD, data=a3_sd,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a3_m2_sd <- rma(yiSD, viSD, data = a3_sd, slab=Article)
+a3_m2_sd <- rma(yiSD, viSD, data = a3_sd, slab=StudyID)
 forest(a3_m2_sd)
 a3_m2_sd
 
@@ -474,8 +456,9 @@ a4_m1_mean <- lmer(yi ~ 1 + (1|StudyID), weights = 1/vi, data=a4_mean,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a4_m2_mean <- rma(yi, vi, data = a4_mean, slab=Article)
+a4_m2_mean <- rma(yi, vi, data = a4_mean, slab=StudyID)
 forest(a4_m2_mean)
+a4_m2_mean
 
 ```
 
@@ -488,7 +471,7 @@ a4_m1_SD <- lmer(yiSD ~ 1 + (1|StudyID), weights = 1/viSD, data=a4_sd,
 control=lmerControl(check.nobs.vs.nlev="ignore",
 check.nobs.vs.nRE="ignore"))
 
-a4_m2_SD <- rma(yiSD, viSD, data = a4_sd, slab=Article)
+a4_m2_SD <- rma(yiSD, viSD, data = a4_sd, slab=StudyID)
 forest(a4_m2_SD)
 a4_m2_SD
 
